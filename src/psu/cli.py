@@ -6,8 +6,10 @@ import logging
 import sys
 
 from psu import config, db
+from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import ingest
+from psu.transform import GarbageTime
 
 
 def make_fetch(settings: config.Settings) -> Fetch:
@@ -37,6 +39,9 @@ def main(argv: list[str] | None = None) -> int:
     ing.add_argument("--seasons", help='e.g. "2024", "2022-2026" or "2022,2024-2025" (default: every season)')
     ing.add_argument("--max-calls", type=int, help="Stop before making more than this many API calls")
     sub.add_parser("status", help="Show row counts per table")
+    bld = sub.add_parser("build", help="Compute metric tables from ingested data (no API calls)")
+    bld.add_argument("--garbage", default="38,28,22", help='Q2,Q3,Q4 garbage-time margins, or "off"')
+    bld.add_argument("--alpha", type=float, default=50.0, help="Ridge shrinkage for opponent adjustment")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -51,6 +56,22 @@ def main(argv: list[str] | None = None) -> int:
                 con.close()
         else:
             _print_counts({name: 0 for name in db.SPECS})
+        return 0
+
+    if args.command == "build":
+        try:
+            garbage = GarbageTime.parse(args.garbage)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        con = db.connect(settings.db_path)
+        try:
+            if db.row_counts(con)["plays"] == 0:
+                print("error: no plays loaded yet; run `psu ingest` first", file=sys.stderr)
+                return 2
+            _print_counts(build(con, garbage=garbage, alpha=args.alpha))
+        finally:
+            con.close()
         return 0
 
     try:
