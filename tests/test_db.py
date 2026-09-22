@@ -98,3 +98,14 @@ def test_replace_scope_removes_rows_missing_from_a_refresh(con):
 
     assert upsert(con, scoped, pd.DataFrame(), replace_scope={"season": 2026}) == 0
     assert {r[0] for r in rows(con, "SELECT id FROM scoped")} == {1, 2, 9}
+
+
+def test_new_declared_columns_are_added_to_an_existing_table(con):
+    spec_v1 = TableSpec("mig", key=("id",), columns={"id": "BIGINT", "a": "VARCHAR"})
+    upsert(con, spec_v1, pd.DataFrame({"id": [1], "a": ["x"]}))
+
+    spec_v2 = TableSpec("mig", key=("id",), columns={"id": "BIGINT", "a": "VARCHAR", "b": "INTEGER"})
+    upsert(con, spec_v2, pd.DataFrame({"id": [2], "a": ["y"], "b": [42]}))
+
+    got = rows(con, "SELECT id, a, b FROM mig ORDER BY id")
+    assert got == [(1, "x", None), (2, "y", 42)]

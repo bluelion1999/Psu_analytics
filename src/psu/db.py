@@ -241,6 +241,11 @@ def _ensure_table(con: duckdb.DuckDBPyConnection, spec: TableSpec, extras: list[
     cols = ", ".join(f"{_q(c)} {t}" for c, t in spec.columns.items())
     con.execute(f"CREATE TABLE IF NOT EXISTS {_q(spec.name)} ({cols})")
     existing = _table_columns(con, spec.name)
+    # Add newly declared columns that are missing
+    for col, typ in spec.columns.items():
+        if col not in existing:
+            con.execute(f"ALTER TABLE {_q(spec.name)} ADD COLUMN {_q(col)} {typ}")
+    # Add extra columns
     for col in extras:
         if col not in existing:
             con.execute(f"ALTER TABLE {_q(spec.name)} ADD COLUMN {_q(col)} {spec.extra_type}")
