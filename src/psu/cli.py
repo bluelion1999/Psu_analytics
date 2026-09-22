@@ -44,8 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("--garbage", default="38,28,22", help='Q2,Q3,Q4 garbage-time margins, or "off"')
     bld.add_argument("--alpha", type=float, default=50.0, help="Ridge shrinkage for opponent adjustment")
     trn = sub.add_parser("train", help="Backtest and train the game model; write predictions (no API calls)")
-    trn.add_argument("--alpha", type=float, default=50.0, help="Ridge shrinkage for rolling team ratings")
-    trn.add_argument("--shrink-plays", type=int, default=300, help="Plays before a season's own data outweighs last season")
+    trn.add_argument("--alpha", type=float, default=20.0, help="Ridge shrinkage for rolling team ratings")
+    trn.add_argument("--shrink-plays", type=int, default=75, help="Plays before a season's own data outweighs last season")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")

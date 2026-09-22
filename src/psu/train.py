@@ -20,7 +20,7 @@ PREDICTION_COLUMNS = [
 ]
 
 
-def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 50.0, shrink_plays: int = 300) -> pd.DataFrame:
+def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
     plays = con.execute(f"SELECT {_PLAY_COLUMNS} FROM plays").df()
     games = con.execute(
         "SELECT id, season, week, season_type, start_date, neutral_site, completed, home_team, away_team, "
