@@ -42,3 +42,37 @@ copy .env.example .env   # then paste your free key from https://collegefootball
     `athlete_name = ' Team'`.
   - About a quarter of `plays` have null `ppa` (non-scrimmage plays such as kickoffs, penalties and
     timeouts).
+
+## Phase 2: Metrics layer
+
+```powershell
+.venv\Scripts\psu build                      # no API calls; rebuilds every metric table (~30 s)
+.venv\Scripts\psu build --garbage 30,20,15   # custom garbage-time margins (Q2,Q3,Q4), or --garbage off
+.venv\Scripts\python -m pytest tests/test_validation.py   # Penn State vs CFBD's advanced stats
+```
+
+`psu build` reads the Phase 1 tables and writes these DuckDB tables (FBS teams only):
+
+| Table | What's in it |
+|---|---|
+| `plays_enriched` | scrimmage plays with `play_class`, `success`, `explosive`, `turnover`, `garbage`, `score_state`, `quarter`, `venue` |
+| `team_offense` / `team_defense` | EPA/play (overall, rush, pass), success rate, explosiveness, explosive rate, 3rd-down rate, turnover rate, per season; garbage time excluded |
+| `team_splits` | the same metrics split by down, quarter, score state, venue, and opponent conference (`side`, `split`, `split_value`) |
+| `team_adjusted` | opponent-adjusted EPA/play and success rate: a per-season ridge regression with offense, defense, and home-field terms (`--alpha` sets shrinkage) |
+| `team_havoc` | (TFL + passes defended + INT + forced fumbles) / defensive plays, from box scores |
+| `team_turnovers` | giveaways, takeaways, and margin |
+| `team_red_zone` | trips inside the 20, TD rate, and points per trip, for offense and defense |
+
+Definitions:
+- **Scrimmage play:** a rush, pass, sack, or fumble/interception play with a PPA value.
+- **Success:** 50% of the yards needed on 1st down, 70% on 2nd, and 100% on 3rd/4th. TDs always succeed; turnovers never do.
+- **Explosiveness:** the mean EPA of successful plays.
+- **Explosive play:** a rush of 12+ yards or a pass of 16+ yards.
+- **Garbage time:** a margin above 38 in Q2, above 28 in Q3, or above 22 in Q4.
+
+**How this compares with CFBD:** CFBD's advanced stats count every play that has a PPA value,
+including End Period rows and punt-return or blocked-kick touchdowns charged to the defense.
+Counted that way, our data reproduces CFBD's play counts and EPA/play exactly for Penn State
+2022–2025. Our metrics use scrimmage plays only, so they differ slightly: up to about 2% of plays
+and about 0.025 EPA. CFBD doesn't publish its explosiveness formula; ours differs by up to about
+0.11 on defense.
