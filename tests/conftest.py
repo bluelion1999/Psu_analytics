@@ -70,3 +70,47 @@ class FakeCFBD:
 @pytest.fixture
 def fake_cfbd():
     return FakeCFBD()
+
+
+def seed_raw_tables(con):
+    """Load a tiny 2024 season into the raw Phase 1 tables: FBS Alpha and Beta, FCS Gamma."""
+    import pandas as pd
+
+    from psu.db import SPECS, upsert
+
+    games = pd.DataFrame([
+        {"id": 1, "season": 2024, "week": 1, "season_type": "regular", "neutral_site": False,
+         "home_team": "Alpha", "home_classification": "fbs", "home_points": 28,
+         "away_team": "Beta", "away_classification": "fbs", "away_points": 14},
+        {"id": 2, "season": 2024, "week": 2, "season_type": "regular", "neutral_site": False,
+         "home_team": "Alpha", "home_classification": "fbs", "home_points": 42,
+         "away_team": "Gamma", "away_classification": "fcs", "away_points": 3},
+    ])
+    plays, drives, box = [], [], []
+    n = 0
+    for game_id, home, away in ((1, "Alpha", "Beta"), (2, "Alpha", "Gamma")):
+        for offense, defense in ((home, away), (away, home)):
+            drive_id = f"{game_id}-{offense}"
+            drives.append({"id": drive_id, "game_id": game_id, "season": 2024, "offense": offense,
+                           "defense": defense, "start_offense_score": 0,
+                           "end_offense_score": 7 if offense == "Alpha" else 0})
+            for i in range(6):
+                n += 1
+                plays.append({
+                    "id": str(n), "game_id": game_id, "drive_id": drive_id, "season": 2024, "week": game_id,
+                    "season_type": "regular", "offense": offense, "defense": defense,
+                    "offense_conference": None if offense == "Gamma" else "Big Ten",
+                    "defense_conference": None if defense == "Gamma" else "Big Ten",
+                    "home": home, "away": away, "period": 1 + i % 4, "down": 1 + i % 3, "distance": 10,
+                    "yards_to_goal": 60 - i * 10, "yards_gained": 8 if offense == "Alpha" else 2,
+                    "play_type": "Rush" if i % 2 else "Pass Reception", "play_text": "",
+                    "ppa": 0.4 if offense == "Alpha" else -0.2, "offense_score": 0, "defense_score": 0,
+                })
+            plays.append({**plays[-1], "id": f"punt-{n}", "play_type": "Punt", "ppa": None})
+            for category, stat in (("turnovers", "1" if offense == "Beta" else "0"), ("tacklesForLoss", "2")):
+                box.append({"game_id": game_id, "season": 2024, "week": game_id, "season_type": "regular",
+                            "team": offense, "category": category, "stat": stat})
+    upsert(con, SPECS["games"], games)
+    upsert(con, SPECS["plays"], pd.DataFrame(plays))
+    upsert(con, SPECS["drives"], pd.DataFrame(drives))
+    upsert(con, SPECS["team_game_stats"], pd.DataFrame(box))
