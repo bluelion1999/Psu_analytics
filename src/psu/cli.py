@@ -43,11 +43,14 @@ def main(argv: list[str] | None = None) -> int:
     settings = config.load_settings()
 
     if args.command == "status":
-        con = db.connect(settings.db_path)
-        try:
-            _print_counts(db.row_counts(con))
-        finally:
-            con.close()
+        if settings.db_path.exists():
+            con = db.connect(settings.db_path, read_only=True)
+            try:
+                _print_counts(db.row_counts(con))
+            finally:
+                con.close()
+        else:
+            _print_counts({name: 0 for name in db.SPECS})
         return 0
 
     try:
@@ -78,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except BudgetExceeded as e:
+        _print_counts(db.row_counts(con))
         print(f"stopped: {e}", file=sys.stderr)
         return 3
     finally:

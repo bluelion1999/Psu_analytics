@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -55,6 +56,14 @@ SPECS: dict[str, TableSpec] = {
                 ),
                 "excitement_index": "DOUBLE",
                 "notes": "VARCHAR",
+                "playoff_competition": "VARCHAR",
+                "playoff_format": "VARCHAR",
+                "playoff_round": "VARCHAR",
+                "playoff_round_name": "VARCHAR",
+                "playoff_bracket_slot": "VARCHAR",
+                "playoff_home_seed": "INTEGER",
+                "playoff_away_seed": "INTEGER",
+                "playoff_bowl_name": "VARCHAR",
             },
         ),
         TableSpec(
@@ -208,15 +217,16 @@ def _q(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
-def connect(path: Path | str) -> duckdb.DuckDBPyConnection:
-    if str(path) != ":memory:":
+def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    if str(path) != ":memory:" and not read_only:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(path))
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS _loads ("
-        "endpoint VARCHAR, cache_key VARCHAR, fetched_at VARCHAR, rows INTEGER, "
-        "PRIMARY KEY (endpoint, cache_key))"
-    )
+    con = duckdb.connect(str(path), read_only=read_only)
+    if not read_only:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS _loads ("
+            "endpoint VARCHAR, cache_key VARCHAR, fetched_at VARCHAR, rows INTEGER, "
+            "PRIMARY KEY (endpoint, cache_key))"
+        )
     return con
 
 
@@ -236,8 +246,19 @@ def _ensure_table(con: duckdb.DuckDBPyConnection, spec: TableSpec, extras: list[
             con.execute(f"ALTER TABLE {_q(spec.name)} ADD COLUMN {_q(col)} {spec.extra_type}")
 
 
-def upsert(con: duckdb.DuckDBPyConnection, spec: TableSpec, df: pd.DataFrame) -> int:
-    """Insert df into spec's table, replacing rows with the same key. Returns rows written."""
+def upsert(
+    con: duckdb.DuckDBPyConnection,
+    spec: TableSpec,
+    df: pd.DataFrame,
+    replace_scope: dict[str, Any] | None = None,
+) -> int:
+    """Insert df into spec's table, replacing rows with the same key.
+
+    If replace_scope is given and df is non-empty, first delete every row in that scope (e.g. a
+    season) so rows CFBD removed on a refresh don't linger as ghosts. An empty df is a no-op: it
+    never wipes a slice just because the response happened to be empty.
+    Returns rows written.
+    """
     if df.empty:
         return 0
     extras = [c for c in df.columns if c not in spec.columns] if spec.extra_type else []
@@ -256,6 +277,9 @@ def upsert(con: duckdb.DuckDBPyConnection, spec: TableSpec, df: pd.DataFrame) ->
     con.register("_incoming", incoming)
     try:
         con.execute("BEGIN")
+        if replace_scope:
+            where = " AND ".join(f"{_q(col)} = ?" for col in replace_scope)
+            con.execute(f"DELETE FROM {_q(spec.name)} WHERE {where}", list(replace_scope.values()))
         con.execute(
             f"CREATE OR REPLACE TEMP TABLE _staged AS "
             f"SELECT * FROM (SELECT {select} FROM _incoming) WHERE {not_null} "

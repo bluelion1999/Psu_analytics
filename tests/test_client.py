@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -114,3 +115,62 @@ def test_cache_file_layout(tmp_path):
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["params"] == {"year": 2024, "week": 1, "season_type": "regular"}
     assert payload["data"] == [{"n": 1}]
+
+
+def test_final_at_refetches_a_pre_final_copy_once(tmp_path):
+    clock, fetch = Clock(), Recorder()
+    c = make_client(tmp_path, fetch, clock, min_interval_s=0)
+    final_at = T0 + timedelta(days=1)
+    c.get("games", {"year": 2026}, max_age=timedelta(hours=24), final_at=final_at)
+    assert len(fetch.calls) == 1
+
+    clock.now = T0 + timedelta(days=5)
+    c.get("games", {"year": 2026}, max_age=timedelta(hours=24), final_at=final_at)
+    assert len(fetch.calls) == 2  # data is final, but this copy predates final_at: refetch once
+
+    clock.now = T0 + timedelta(days=6)
+    c.get("games", {"year": 2026}, max_age=timedelta(hours=24), final_at=final_at)
+    assert len(fetch.calls) == 2  # the day-5 copy was fetched at/after final_at: never expires
+
+
+def test_copy_fetched_after_final_at_never_expires(tmp_path):
+    clock, fetch = Clock(), Recorder()
+    c = make_client(tmp_path, fetch, clock, min_interval_s=0)
+    final_at = T0 - timedelta(days=1)
+    c.get("games", {"year": 2026}, max_age=timedelta(hours=1), final_at=final_at)
+    assert len(fetch.calls) == 1
+
+    clock.now = T0 + timedelta(days=30)
+    c.get("games", {"year": 2026}, max_age=timedelta(hours=1), final_at=final_at)
+    assert len(fetch.calls) == 1
+
+
+def test_corrupt_cache_file_is_treated_as_a_miss(tmp_path):
+    clock, fetch = Clock(), Recorder()
+    c = make_client(tmp_path, fetch, clock)
+    path = c.path_for("games", {"year": 2026})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    entry = c.get("games", {"year": 2026})
+    assert len(fetch.calls) == 1
+    assert entry.data == [{"n": 1}]
+
+
+def test_write_atomic_retries_on_a_transient_permission_error(tmp_path, monkeypatch):
+    clock, fetch = Clock(), Recorder()
+    c = make_client(tmp_path, fetch, clock)
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError("locked")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("psu.client.os.replace", flaky_replace)
+    entry = c.get("games", {"year": 2026})
+    assert entry.data == [{"n": 1}]
+    assert c.path_for("games", {"year": 2026}).exists()
+    assert clock.slept == [0.2, 0.2]

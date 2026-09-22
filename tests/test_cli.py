@@ -32,10 +32,19 @@ def test_status_lists_all_tables(settings, capsys):
     assert "plays" in out and "ratings_sp" in out
 
 
+def test_status_does_not_create_the_database(settings, capsys):
+    assert cli.main(["status"]) == 0
+    capsys.readouterr()
+    assert not settings.db_path.exists()
+
+
 def test_budget_exhaustion_exits_cleanly(settings, capsys, monkeypatch, fake_cfbd):
     monkeypatch.setattr(cli, "make_fetch", lambda s: fake_cfbd)
     assert cli.main(["ingest", "--seasons", "2024", "--max-calls", "3"]) == 3
-    assert "budget" in capsys.readouterr().err.lower()
+    captured = capsys.readouterr()
+    out, err = captured.out, captured.err
+    assert "budget" in err.lower()
+    assert "plays" in out
     assert len(fake_cfbd.calls) == 3
 
 

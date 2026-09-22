@@ -81,3 +81,20 @@ def test_row_counts_lists_every_table_even_before_load(con):
     counts = row_counts(con)
     assert set(counts) == set(SPECS)
     assert all(v == 0 for v in counts.values())
+
+
+def test_replace_scope_removes_rows_missing_from_a_refresh(con):
+    scoped = TableSpec("scoped", key=("id",), columns={"id": "BIGINT", "season": "INTEGER"})
+    upsert(con, scoped, pd.DataFrame({"id": [1, 2, 3], "season": [2026, 2026, 2026]}))
+    upsert(con, scoped, pd.DataFrame({"id": [9], "season": [2025]}))
+
+    upsert(
+        con,
+        scoped,
+        pd.DataFrame({"id": [1, 2], "season": [2026, 2026]}),
+        replace_scope={"season": 2026},
+    )
+    assert {r[0] for r in rows(con, "SELECT id FROM scoped")} == {1, 2, 9}
+
+    assert upsert(con, scoped, pd.DataFrame(), replace_scope={"season": 2026}) == 0
+    assert {r[0] for r in rows(con, "SELECT id FROM scoped")} == {1, 2, 9}

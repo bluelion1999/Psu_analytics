@@ -33,3 +33,12 @@ copy .env.example .env   # then paste your free key from https://collegefootball
   stats are stored long (one row per team/stat or player/stat). Start dates are UTC.
 - Deleting `data/psu.duckdb` is safe: the next `psu ingest` rebuilds it from the cache without
   calling the API.
+- Refreshing the current season costs about 5 calls per daily run plus 3 per live week (talent,
+  recruiting and the calendar refresh weekly, with about 3 more calls on those days). Running once
+  a day in-season uses roughly 250-350 calls a month.
+- Data quirks for Phase 2:
+  - `ratings_sp` includes a `team = 'nationalAverages'` row.
+  - `player_game_stats` includes team-total rows with a negative `athlete_id` and
+    `athlete_name = ' Team'`.
+  - About a quarter of `plays` have null `ppa` (non-scrimmage plays such as kickoffs, penalties and
+    timeouts).

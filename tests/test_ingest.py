@@ -9,10 +9,10 @@ SEASON_LEVEL = 7  # games, drives, lines, advanced_season, ratings_sp, talent, r
 WEEKLY = 3  # plays, team_game_stats, player_game_stats
 
 
-def run(tmp_path, fake, seasons, now=NOW, con=None):
+def run(tmp_path, fake, seasons, now=NOW, con=None, current=2026):
     con = con or db.connect(tmp_path / "psu.duckdb")
     client = CachedClient(tmp_path / "raw", fake, min_interval_s=0, now=lambda: now)
-    return con, ingest(client, con, seasons, current=2026, now=now)
+    return con, ingest(client, con, seasons, current=current, now=now)
 
 
 def test_completed_season_rerun_makes_no_api_calls_and_no_duplicates(tmp_path, fake_cfbd):
@@ -42,8 +42,40 @@ def test_current_season_skips_future_weeks_and_refreshes_only_live_data(tmp_path
     refetched = {(e, p.get("week")) for e, p in fake_cfbd.calls}
     assert ("plays", 1) not in refetched  # week 1 ended more than 3 days ago: final
     assert ("plays", 4) in refetched  # week 4 is still in progress
-    assert second.api_calls == 1 + SEASON_LEVEL + WEEKLY
+    # talent, recruiting and the calendar use the 7-day slow-refresh window, so they're not refetched:
+    # games, drives, lines, advanced_season, ratings_sp + week 4's three weekly endpoints.
+    assert second.api_calls == 5 + WEEKLY
     assert second.row_counts["plays"] == first.row_counts["plays"]
+
+
+def test_in_progress_week_is_refetched_once_after_it_becomes_final(tmp_path, fake_cfbd):
+    con, first = run(tmp_path, fake_cfbd, [2026])
+
+    fake_cfbd.calls.clear()
+    _, second = run(tmp_path, fake_cfbd, [2026], now=datetime(2026, 10, 5, 12, tzinfo=timezone.utc), con=con)
+    week4_calls = [c for c in fake_cfbd.calls if c[1].get("week") == 4]
+    assert len(week4_calls) == WEEKLY  # plays, team_game_stats, player_game_stats: each refetched once
+    assert {e for e, _ in week4_calls} == set(("plays", "team_game_stats", "player_game_stats"))
+
+    fake_cfbd.calls.clear()
+    _, third = run(tmp_path, fake_cfbd, [2026], now=datetime(2026, 10, 6, 12, tzinfo=timezone.utc), con=con)
+    assert [c for c in fake_cfbd.calls if c[0] == "plays" and c[1].get("week") == 4] == []
+
+
+def test_season_level_data_is_refetched_once_after_the_season_ends(tmp_path, fake_cfbd):
+    con, first = run(tmp_path, fake_cfbd, [2026], current=2026)
+
+    fake_cfbd.calls.clear()
+    _, second = run(
+        tmp_path, fake_cfbd, [2026], now=datetime(2027, 3, 2, 12, tzinfo=timezone.utc), con=con, current=2027
+    )
+    assert len([c for c in fake_cfbd.calls if c[0] == "games"]) == 1
+
+    fake_cfbd.calls.clear()
+    _, third = run(
+        tmp_path, fake_cfbd, [2026], now=datetime(2027, 3, 3, 12, tzinfo=timezone.utc), con=con, current=2027
+    )
+    assert [c for c in fake_cfbd.calls if c[0] == "games"] == []
 
 
 def test_deleted_database_is_rebuilt_from_cache_without_api_calls(tmp_path, fake_cfbd):
