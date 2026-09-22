@@ -68,7 +68,15 @@ Definitions:
 - **Success:** 50% of the yards needed on 1st down, 70% on 2nd, and 100% on 3rd/4th. TDs always succeed; turnovers never do.
 - **Explosiveness:** the mean EPA of successful plays.
 - **Explosive play:** a rush of 12+ yards or a pass of 16+ yards.
-- **Garbage time:** a margin above 38 in Q2, above 28 in Q3, or above 22 in Q4.
+- **Garbage time:** a margin above 38 in Q2, above 28 in Q3, or above 22 in Q4. Margins and score
+  states use the score before the play (the drive's starting score).
+- **Opponent adjustment:** adjusted values are centred on the league's play-weighted average, so
+  raw and adjusted numbers are directly comparable.
+- **Red zone:** a trip is a drive that reaches the 20. Points come from the drive's result: a TD
+  counts 6–8 and a FG counts 3.
+
+**Caveat for modelling:** these are full-season numbers, postseason included. Phase 3 builds
+week-by-week versions for pregame predictions so no game uses information from its own future.
 
 **How this compares with CFBD:** CFBD's advanced stats count every play that has a PPA value,
 including End Period rows and punt-return or blocked-kick touchdowns charged to the defense.
