@@ -127,6 +127,14 @@ Win probability is `NormalCDF(margin / sigma)`, with sigma taken from out-of-fol
 | Penn State | 12 | 7.84 | 12.69 | 0.194 | 0.239 |
 
 The closing line is still about 0.7 points more accurate overall, as expected against a
-market-efficient baseline. The Penn State edge is 12 games, which is too few to read into. The
-model's predictions correlate 0.92 with Vegas's. Its average home-win probability (0.589) matches
-the actual home-win rate (0.586).
+market-efficient baseline. The Penn State edge is 12 games, which is too few to read into. On the
+2025 test season, the model's predictions correlate 0.91 with Vegas's. Its average home-win
+probability is 0.584, against an actual home-win rate of 0.595.
+
+The `split` column in `game_predictions` says which rows are genuine pregame predictions:
+- `upcoming`: not played yet. This is a true forecast.
+- `in_sample`: already played, and the final model was trained on it, so the prediction flatters the
+  model.
+- `no_prior`: the first season, with no prior-season ratings. Never trained on.
+
+For honest pregame numbers on past games, use the backtest report.
