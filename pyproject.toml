@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "psu-analytics"
+version = "0.1.0"
+description = "Penn State football analytics on CollegeFootballData"
+requires-python = ">=3.11"
+dependencies = [
+    "cfbd>=5.29,<6",
+    "duckdb>=1.1",
+    "pandas>=2.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+psu = "psu.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psu"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
