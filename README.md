@@ -84,3 +84,49 @@ Counted that way, our data reproduces CFBD's play counts and EPA/play exactly fo
 2022–2025. Our metrics use scrimmage plays only, so they differ slightly: up to about 2% of plays
 and about 0.025 EPA. CFBD doesn't publish its explosiveness formula; ours differs by up to about
 0.11 on defense.
+
+## Phase 3: Game prediction model
+
+```powershell
+.venv\Scripts\psu train                               # ~1 min, no API calls
+.venv\Scripts\psu train --alpha 20 --shrink-plays 75  # the (tuned) defaults, spelled out
+```
+
+`psu train` predicts the home team's margin for every FBS-vs-FBS game, converts it to a win
+probability, compares itself with the closing Vegas line, and writes:
+
+- `game_predictions` (DuckDB): `pred_margin` and `home_win_prob` for every game, including
+  upcoming ones, next to `vegas_margin` and the actual `margin`.
+- `data/models/game_model.joblib`: the fitted model.
+- `data/reports/game_model.md` and `.json`: the backtest report.
+
+**Features** (home minus away): opponent-adjusted offensive and defensive EPA/play and success
+rate as of the game's week, last season's SP+ rating, the talent composite, rest days, and a
+home-field flag (0 at neutral sites).
+
+**No leakage:**
+- A game's team ratings are fit only on plays from earlier weeks of the same season. Early in the
+  season they are blended with last season's final ratings. `--shrink-plays` sets how many plays it
+  takes for the current season to dominate.
+- SP+ comes from the previous season, because CFBD's same-season SP+ reflects the whole season.
+- Evaluation is strictly time-based. The first season in the data (2022) serves only as a prior.
+
+**Evaluation:**
+- Validation trains on 2023 and evaluates on 2024; this picks the model (linear beat XGBoost) and
+  the tuning.
+- Test trains on 2023–2024 and evaluates on 2025, which was never used for any choice.
+- The final model is refit on every completed game from 2023 onward.
+
+Win probability is `NormalCDF(margin / sigma)`, with sigma taken from out-of-fold residuals.
+
+2025 test season:
+
+| Games | N | Model MAE | Vegas MAE | Model Brier | Vegas Brier |
+|---|---|---|---|---|---|
+| All FBS vs FBS | 808 | 12.52 | 11.82 | 0.185 | 0.175 |
+| Penn State | 12 | 7.84 | 12.69 | 0.194 | 0.239 |
+
+The closing line is still about 0.7 points more accurate overall, as expected against a
+market-efficient baseline. The Penn State edge is 12 games, which is too few to read into. The
+model's predictions correlate 0.92 with Vegas's. Its average home-win probability (0.589) matches
+the actual home-win rate (0.586).
