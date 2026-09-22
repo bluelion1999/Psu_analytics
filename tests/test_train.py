@@ -20,6 +20,11 @@ def test_train_and_save_writes_predictions_model_and_report(tmp_path):
     upcoming = preds[preds["margin"].isna()]
     assert len(upcoming) > 0 and upcoming["pred_margin"].notna().all()
 
+    assert set(preds["split"]) == {"no_prior", "in_sample", "upcoming"}
+    assert (preds.loc[preds["margin"].isna(), "split"] == "upcoming").all()
+    assert (preds.loc[preds["season"] == 2022, "split"] == "no_prior").all()
+    assert (preds.loc[preds["split"] == "in_sample", "season"] >= 2023).all()
+
     model = joblib.load(tmp_path / "models" / "game_model.joblib")
     assert model.kind == report["model_kind"]
     saved = json.loads((tmp_path / "reports" / "game_model.json").read_text(encoding="utf-8"))

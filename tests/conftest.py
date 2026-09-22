@@ -140,6 +140,8 @@ def synthetic_features(seed=0, games_per_season=240):
                 "home_team": str(home), "away_team": str(away), "completed": completed,
                 "margin": signal + rng.normal(0, 12) if completed else np.nan,
                 "vegas_margin": signal + rng.normal(0, 3) if i % 10 else np.nan,
+                "start_date": pd.Timestamp(f"{season}-09-01") + pd.Timedelta(days=7 * (i % 15)),
+                "neutral_site": False,
                 **x,
             })
     return pd.DataFrame(rows)

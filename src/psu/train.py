@@ -6,6 +6,7 @@ from pathlib import Path
 
 import duckdb
 import joblib
+import numpy as np
 import pandas as pd
 
 from psu.build import _PLAY_COLUMNS
@@ -15,8 +16,8 @@ from psu.models import game_predict as gp
 from psu.transform import enrich_plays
 
 PREDICTION_COLUMNS = [
-    "game_id", "season", "week", "season_type", "home_team", "away_team", "completed",
-    "margin", "vegas_margin", "pred_margin", "home_win_prob",
+    "game_id", "season", "week", "season_type", "start_date", "neutral_site", "home_team", "away_team",
+    "completed", "margin", "vegas_margin", "pred_margin", "home_win_prob", "split",
 ]
 
 
@@ -77,6 +78,20 @@ def train_and_save(
     predictions = features.copy()
     predictions["pred_margin"] = model.predict_margin(features)
     predictions["home_win_prob"] = model.win_prob(features)
+
+    min_season = features["season"].min()
+    predictions["split"] = np.select(
+        [
+            predictions["margin"].isna(),
+            predictions["season"] == min_season,
+        ],
+        [
+            "upcoming",
+            "no_prior",
+        ],
+        default="in_sample"
+    )
+
     predictions = predictions[PREDICTION_COLUMNS]
     con.register("_predictions", predictions)
     try:
