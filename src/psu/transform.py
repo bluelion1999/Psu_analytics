@@ -14,8 +14,11 @@ RUSH_TYPES = frozenset({"Rush", "Rushing Touchdown"})
 PASS_TYPES = frozenset({
     "Pass Reception", "Pass Incompletion", "Passing Touchdown", "Sack",
     "Pass Interception Return", "Interception", "Interception Return Touchdown",
+    "Pass Completion", "Pass",
 })
-FUMBLE_TYPES = frozenset({"Fumble Recovery (Own)", "Fumble Recovery (Opponent)", "Fumble Return Touchdown"})
+FUMBLE_TYPES = frozenset({
+    "Fumble Recovery (Own)", "Fumble Recovery (Opponent)", "Fumble Return Touchdown", "Fumble",
+})
 SCRIMMAGE_TYPES = RUSH_TYPES | PASS_TYPES | FUMBLE_TYPES | {"Safety"}
 TURNOVER_TYPES = frozenset({
     "Pass Interception Return", "Interception", "Interception Return Touchdown",
@@ -96,9 +99,21 @@ def play_class(play_type: pd.Series, play_text: pd.Series) -> pd.Series:
     return pd.Series(np.where(passing, "pass", "rush"), index=play_type.index)
 
 
+def _pre_play_margin(df: pd.DataFrame, drives: pd.DataFrame) -> pd.Series:
+    """The drive's starting margin (offense's perspective) when known, else the play's own score diff."""
+    drive_info = drives.set_index("id")
+    drive_offense = df["drive_id"].map(drive_info["offense"])
+    start_off = df["drive_id"].map(drive_info["start_offense_score"])
+    start_def = df["drive_id"].map(drive_info["start_defense_score"])
+    use_drive = (drive_offense == df["offense"]) & start_off.notna() & start_def.notna()
+    fallback = df["offense_score"] - df["defense_score"]
+    return pd.Series(np.where(use_drive, start_off - start_def, fallback), index=df.index).astype(int)
+
+
 def enrich_plays(
     plays: pd.DataFrame,
     games: pd.DataFrame,
+    drives: pd.DataFrame,
     *,
     garbage: GarbageTime = GarbageTime(),
     explosive: Explosive = Explosive(),
@@ -109,7 +124,7 @@ def enrich_plays(
     df["turnover"] = df["play_type"].isin(TURNOVER_TYPES)
     long_enough = np.where(df["play_class"] == "rush", explosive.rush_yards, explosive.pass_yards)
     df["explosive"] = (df["yards_gained"] >= long_enough) & ~df["turnover"]
-    df["margin"] = df["offense_score"] - df["defense_score"]
+    df["margin"] = _pre_play_margin(df, drives)
     df["garbage"] = is_garbage(df["period"], df["margin"], garbage)
     df["score_state"] = score_state(df["margin"])
     df["quarter"] = np.where(df["period"] > 4, "OT", df["period"].astype(str))

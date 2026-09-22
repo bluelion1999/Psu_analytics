@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 SIDES = ("offense", "defense")
@@ -101,12 +102,19 @@ def red_zone(
     by: Sequence[str] = ("season",),
     line: int = 20,
 ) -> pd.DataFrame:
-    """Drives with a scrimmage play at or inside the `line`: trips, TD rate, and points per trip."""
+    """Drives with a scrimmage play at or inside the `line`: trips, TD rate, and points per trip.
+
+    Points and touchdowns come from `drive_result` rather than the score difference, which is
+    unreliable on a small share of drives (garbage values like 1, 4, 5, or 9-58 points).
+    """
     _check_side(side)
     reached = enriched.loc[enriched["yards_to_goal"] <= line, "drive_id"].unique()
     trips = drives[drives["id"].isin(reached)].copy()
-    trips["points"] = (trips["end_offense_score"] - trips["start_offense_score"]).clip(lower=0)
-    trips["touchdown"] = trips["points"] >= 6
+    diff = trips["end_offense_score"] - trips["start_offense_score"]
+    trips["touchdown"] = trips["drive_result"].eq("TD")
+    trips["points"] = np.select(
+        [trips["touchdown"], trips["drive_result"].eq("FG")], [diff.clip(6, 8), 3], 0
+    )
     grouped = trips.groupby([side, *by])
     out = pd.DataFrame({
         "trips": grouped.size(),

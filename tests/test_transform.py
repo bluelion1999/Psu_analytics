@@ -10,6 +10,9 @@ BASE = dict(
     play_type="Rush", play_text="RB One run for 5 yds", ppa=0.1, offense_score=0, defense_score=0,
 )
 GAMES = pd.DataFrame({"id": [1, 2], "neutral_site": [False, True]})
+DRIVES = pd.DataFrame([
+    {"id": "d1", "offense": "Penn State", "start_offense_score": 0, "start_defense_score": 0},
+])
 
 
 def plays(*overrides):
@@ -61,7 +64,7 @@ def test_score_state_buckets():
 
 def test_enrich_filters_to_scrimmage_plays_with_ppa():
     df = plays({"play_type": "Rush"}, {"play_type": "Punt"}, {"play_type": "Timeout"}, {"play_type": "Rush", "ppa": None})
-    assert list(enrich_plays(df, GAMES)["id"]) == ["0"]
+    assert list(enrich_plays(df, GAMES, DRIVES)["id"]) == ["0"]
 
 
 def test_enrich_classifies_rush_pass_and_fumbles():
@@ -72,7 +75,7 @@ def test_enrich_classifies_rush_pass_and_fumbles():
         {"play_type": "Fumble Recovery (Own)", "play_text": "QB One pass complete to WR Two, fumbled"},
         {"play_type": "Fumble Recovery (Own)", "play_text": "RB One run for 3 yds, fumbled"},
     )
-    assert list(enrich_plays(df, GAMES)["play_class"]) == ["rush", "pass", "pass", "pass", "rush"]
+    assert list(enrich_plays(df, GAMES, DRIVES)["play_class"]) == ["rush", "pass", "pass", "pass", "rush"]
 
 
 def test_explosive_uses_separate_rush_and_pass_thresholds():
@@ -82,20 +85,52 @@ def test_explosive_uses_separate_rush_and_pass_thresholds():
         {"play_type": "Pass Reception", "yards_gained": 16},
         {"play_type": "Pass Reception", "yards_gained": 15},
     )
-    assert list(enrich_plays(df, GAMES)["explosive"]) == [True, False, True, False]
-    custom = enrich_plays(df, GAMES, explosive=Explosive(rush_yards=10, pass_yards=20))
+    assert list(enrich_plays(df, GAMES, DRIVES)["explosive"]) == [True, False, True, False]
+    custom = enrich_plays(df, GAMES, DRIVES, explosive=Explosive(rush_yards=10, pass_yards=20))
     assert list(custom["explosive"]) == [True, True, False, False]
 
 
 def test_context_columns():
     df = plays(
-        {"offense_score": 21, "defense_score": 0, "period": 3},
+        {"offense_score": 21, "defense_score": 0, "period": 3, "drive_id": "d2"},
         {"offense": "Opp", "defense": "Penn State", "offense_score": 0, "defense_score": 35, "period": 3},
         {"game_id": 2, "period": 5},
     )
-    out = enrich_plays(df, GAMES)
+    drives = pd.concat([DRIVES, pd.DataFrame([
+        {"id": "d2", "offense": "Penn State", "start_offense_score": 21, "start_defense_score": 0},
+    ])], ignore_index=True)
+    out = enrich_plays(df, GAMES, drives)
     assert list(out["venue"]) == ["home", "away", "neutral"]
     assert list(out["score_state"]) == ["up 9+", "down 9+", "tied"]
     assert list(out["garbage"]) == [False, True, False]
     assert list(out["quarter"]) == ["3", "3", "OT"]
     assert list(out["margin"]) == [21, -35, 0]
+
+
+def test_enrich_keeps_alternate_play_type_names():
+    df = plays(
+        {"play_type": "Pass Completion"},
+        {"play_type": "Pass"},
+        {"play_type": "Fumble", "play_text": "RB One run for 2 yds, fumbled"},
+    )
+    out = enrich_plays(df, GAMES, DRIVES)
+    assert list(out["id"]) == ["0", "1", "2"]
+    assert list(out["play_class"]) == ["pass", "pass", "rush"]
+
+
+def test_margin_uses_pre_play_score_on_scoring_plays():
+    df = plays({"play_type": "Passing Touchdown", "offense_score": 7, "defense_score": 0})
+    out = enrich_plays(df, GAMES, DRIVES)
+    assert list(out["margin"]) == [0]
+    assert list(out["score_state"]) == ["tied"]
+
+    drives = pd.DataFrame([
+        {"id": "d3", "offense": "Penn State", "start_offense_score": 22, "start_defense_score": 0},
+    ])
+    q4 = plays({
+        "play_type": "Passing Touchdown", "period": 4, "drive_id": "d3",
+        "offense_score": 29, "defense_score": 0,
+    })
+    out_q4 = enrich_plays(q4, GAMES, drives)
+    assert list(out_q4["margin"]) == [22]
+    assert list(out_q4["garbage"]) == [False]

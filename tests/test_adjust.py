@@ -47,6 +47,13 @@ def test_home_field_term_does_not_bias_neutral_games():
     assert (diff - base).abs().max() < 0.03  # the home term absorbs home advantage
 
 
+def test_adjusted_levels_are_centred_on_the_league_average():
+    df = synthetic()
+    out = opponent_adjust(df, "ppa", alpha=1.0)
+    assert np.average(out["off_adj"], weights=out["off_plays"]) == pytest.approx(df["ppa"].mean(), abs=1e-9)
+    assert np.average(out["def_adj"], weights=out["def_plays"]) == pytest.approx(df["ppa"].mean(), abs=1e-9)
+
+
 def test_garbage_time_excluded_by_default_and_value_validated():
     df = pd.concat([synthetic(), pd.DataFrame([{"season": 2024, "offense": "B", "defense": "C", "ppa": 50.0,
                                                "success": True, "venue": "neutral", "garbage": True}])])

@@ -88,11 +88,12 @@ def build(
         "SELECT id, season, neutral_site, home_team, away_team, home_classification, away_classification FROM games"
     ).df()
     drives = con.execute(
-        "SELECT id, season, offense, defense, start_offense_score, end_offense_score FROM drives"
+        "SELECT id, season, offense, defense, start_offense_score, start_defense_score, "
+        "end_offense_score, drive_result FROM drives"
     ).df()
     box = con.execute("SELECT game_id, season, team, category, stat FROM team_game_stats").df()
 
-    enriched = enrich_plays(plays, games, garbage=garbage, explosive=explosive)
+    enriched = enrich_plays(plays, games, drives, garbage=garbage, explosive=explosive)
     fbs = fbs_teams(games)
 
     def fbs_only(df: pd.DataFrame) -> pd.DataFrame:
@@ -108,6 +109,13 @@ def build(
         "team_turnovers": fbs_only(turnover_margin(box)),
         "team_red_zone": fbs_only(_red_zone(enriched, drives)),
     }
-    for name, df in tables.items():
-        _write(con, name, df)
+    con.begin()
+    try:
+        for name, df in tables.items():
+            _write(con, name, df)
+    except Exception:
+        con.rollback()
+        raise
+    else:
+        con.commit()
     return {name: len(df) for name, df in tables.items()}

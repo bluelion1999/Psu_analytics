@@ -92,8 +92,9 @@ def seed_raw_tables(con):
         for offense, defense in ((home, away), (away, home)):
             drive_id = f"{game_id}-{offense}"
             drives.append({"id": drive_id, "game_id": game_id, "season": 2024, "offense": offense,
-                           "defense": defense, "start_offense_score": 0,
-                           "end_offense_score": 7 if offense == "Alpha" else 0})
+                           "defense": defense, "start_offense_score": 0, "start_defense_score": 0,
+                           "end_offense_score": 7 if offense == "Alpha" else 0,
+                           "drive_result": "TD" if offense == "Alpha" else "PUNT"})
             for i in range(6):
                 n += 1
                 plays.append({

@@ -29,13 +29,16 @@ def ours_and_cfbd():
         season_list = ", ".join(map(str, SEASONS))
         plays = con.execute(f"SELECT {_PLAY_COLUMNS} FROM plays WHERE season IN ({season_list})").df()
         games = con.execute("SELECT id, neutral_site FROM games").df()
+        drives = con.execute(
+            f"SELECT id, offense, start_offense_score, start_defense_score FROM drives WHERE season IN ({season_list})"
+        ).df()
         box = con.execute(
             f"SELECT game_id, season, team, category, stat FROM team_game_stats WHERE season IN ({season_list})"
         ).df()
         cfbd = con.execute(f"SELECT * FROM advanced_season WHERE team = '{TEAM}'").df().set_index("season")
     finally:
         con.close()
-    enriched = enrich_plays(plays, games)
+    enriched = enrich_plays(plays, games, drives)
     offense = efficiency(enriched, "offense", exclude_garbage=False).set_index(["team", "season"]).loc[TEAM]
     defense = efficiency(enriched, "defense", exclude_garbage=False).set_index(["team", "season"]).loc[TEAM]
     havoc = havoc_rate(box, enriched).set_index(["team", "season"]).loc[TEAM]

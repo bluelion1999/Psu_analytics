@@ -92,14 +92,20 @@ def test_red_zone_trips_touchdowns_and_points():
     plays = enriched(
         {"drive_id": "d1", "yards_to_goal": 15}, {"drive_id": "d1", "yards_to_goal": 3},
         {"drive_id": "d2", "yards_to_goal": 18}, {"drive_id": "d3", "yards_to_goal": 40},
+        {"drive_id": "d4", "yards_to_goal": 5},
     )
     drives = pd.DataFrame([
-        {"id": "d1", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 0, "end_offense_score": 7},
-        {"id": "d2", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 7, "end_offense_score": 10},
-        {"id": "d3", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 10, "end_offense_score": 10},
+        {"id": "d1", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 0,
+         "end_offense_score": 7, "drive_result": "TD"},
+        {"id": "d2", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 7,
+         "end_offense_score": 10, "drive_result": "FG"},
+        {"id": "d3", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 10,
+         "end_offense_score": 10, "drive_result": "PUNT"},
+        {"id": "d4", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 10,
+         "end_offense_score": 11, "drive_result": "TD"},
     ])
     row = red_zone(plays, drives).iloc[0]
-    assert (row["team"], row["trips"], row["touchdowns"]) == ("A", 2, 1)
-    assert row["td_rate"] == pytest.approx(0.5)
-    assert row["points_per_trip"] == pytest.approx(5.0)
+    assert (row["team"], row["trips"], row["touchdowns"]) == ("A", 3, 2)
+    assert row["td_rate"] == pytest.approx(2 / 3)
+    assert row["points_per_trip"] == pytest.approx(16 / 3)
     assert red_zone(plays, drives, "defense").iloc[0]["team"] == "B"
