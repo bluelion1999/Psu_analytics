@@ -115,3 +115,31 @@ def seed_raw_tables(con):
     upsert(con, SPECS["plays"], pd.DataFrame(plays))
     upsert(con, SPECS["drives"], pd.DataFrame(drives))
     upsert(con, SPECS["team_game_stats"], pd.DataFrame(box))
+
+
+def synthetic_features(seed=0, games_per_season=240):
+    """Feature rows for 2022-2026 with a known linear signal; half of 2026 is still to be played."""
+    import numpy as np
+    import pandas as pd
+
+    from psu.features import FEATURES
+
+    rng = np.random.default_rng(seed)
+    teams = [f"T{i}" for i in range(30)] + ["Penn State"]
+    rows, game_id = [], 0
+    for season in range(2022, 2027):
+        for i in range(games_per_season):
+            game_id += 1
+            home, away = rng.choice(teams, 2, replace=False)
+            x = {c: float(rng.normal()) for c in FEATURES}
+            x["home_field"] = float(rng.random() < 0.9)
+            signal = 8 * x["d_off_epa"] - 6 * x["d_def_epa"] + 4 * x["d_prior_sp"] + 2.5 * x["home_field"]
+            completed = season < 2026 or i < games_per_season // 2
+            rows.append({
+                "game_id": game_id, "season": season, "week": 1 + i % 15, "season_type": "regular",
+                "home_team": str(home), "away_team": str(away), "completed": completed,
+                "margin": signal + rng.normal(0, 12) if completed else np.nan,
+                "vegas_margin": signal + rng.normal(0, 3) if i % 10 else np.nan,
+                **x,
+            })
+    return pd.DataFrame(rows)
