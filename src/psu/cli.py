@@ -9,6 +9,7 @@ from psu import config, db
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import ingest
+from psu.train import load_features, report_markdown, train_and_save
 from psu.transform import GarbageTime
 
 
@@ -42,6 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     bld = sub.add_parser("build", help="Compute metric tables from ingested data (no API calls)")
     bld.add_argument("--garbage", default="38,28,22", help='Q2,Q3,Q4 garbage-time margins, or "off"')
     bld.add_argument("--alpha", type=float, default=50.0, help="Ridge shrinkage for opponent adjustment")
+    trn = sub.add_parser("train", help="Backtest and train the game model; write predictions (no API calls)")
+    trn.add_argument("--alpha", type=float, default=50.0, help="Ridge shrinkage for rolling team ratings")
+    trn.add_argument("--shrink-plays", type=int, default=300, help="Plays before a season's own data outweighs last season")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -72,6 +76,25 @@ def main(argv: list[str] | None = None) -> int:
             _print_counts(build(con, garbage=garbage, alpha=args.alpha))
         finally:
             con.close()
+        return 0
+
+    if args.command == "train":
+        con = db.connect(settings.db_path)
+        try:
+            if db.row_counts(con)["plays"] == 0:
+                print("error: no plays loaded yet; run `psu ingest` first", file=sys.stderr)
+                return 2
+            features = load_features(con, alpha=args.alpha, shrink_plays=args.shrink_plays)
+            try:
+                report = train_and_save(
+                    con, features, current_season=settings.current_season, out_dir=settings.db_path.parent
+                )
+            except ValueError as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 2
+        finally:
+            con.close()
+        print(report_markdown(report))
         return 0
 
     try:

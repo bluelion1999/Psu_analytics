@@ -76,3 +76,34 @@ def test_build_writes_tables(settings, capsys):
     assert cli.main(["build", "--alpha", "1"]) == 0
     out = capsys.readouterr().out
     assert "team_offense" in out and "team_adjusted" in out
+
+
+def test_train_requires_ingested_data(settings, capsys):
+    assert cli.main(["train"]) == 2
+    assert "psu ingest" in capsys.readouterr().err
+
+
+def test_train_reports_and_writes_outputs(settings, capsys, monkeypatch):
+    from conftest import seed_raw_tables, synthetic_features
+    from psu import db
+
+    con = db.connect(settings.db_path)
+    seed_raw_tables(con)
+    con.close()
+    monkeypatch.setattr(cli, "load_features", lambda con, **kw: synthetic_features())
+    assert cli.main(["train"]) == 0
+    assert "Vegas MAE" in capsys.readouterr().out
+    assert (settings.db_path.parent / "models" / "game_model.joblib").exists()
+
+
+def test_train_with_too_few_seasons_is_a_clean_error(settings, capsys, monkeypatch):
+    from conftest import seed_raw_tables, synthetic_features
+    from psu import db
+
+    con = db.connect(settings.db_path)
+    seed_raw_tables(con)
+    con.close()
+    few = synthetic_features()
+    monkeypatch.setattr(cli, "load_features", lambda con, **kw: few[few["season"] >= 2024])
+    assert cli.main(["train"]) == 2
+    assert "3 complete seasons" in capsys.readouterr().err
