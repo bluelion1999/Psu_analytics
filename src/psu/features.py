@@ -95,3 +95,46 @@ def rolling_ratings(
             out.insert(0, "season", int(season))
             frames.append(out)
     return pd.concat(frames, ignore_index=True)
+
+
+FEATURES = ["home_field", "d_off_epa", "d_def_epa", "d_off_sr", "d_def_sr", "d_prior_sp", "d_talent", "d_rest"]
+GAME_COLUMNS = [
+    "game_id", "season", "week", "season_type", "slate", "start_date", "home_team", "away_team",
+    "neutral_site", "completed", "home_points", "away_points", "margin", "vegas_margin",
+]
+
+
+def game_features(
+    enriched: pd.DataFrame,
+    games: pd.DataFrame,
+    lines: pd.DataFrame,
+    sp: pd.DataFrame,
+    talent: pd.DataFrame,
+    *,
+    alpha: float = 50.0,
+    shrink_plays: int = 300,
+) -> pd.DataFrame:
+    """One row per FBS-vs-FBS game: pregame home-minus-away features, the Vegas margin, and the result."""
+    ratings = rolling_ratings(enriched, games, alpha=alpha, shrink_plays=shrink_plays)
+    g = games[(games["home_classification"] == "fbs") & (games["away_classification"] == "fbs")]
+    g = g.merge(slate_index(games)[["id", "slate"]], on="id")
+    prior_sp = sp.assign(season=sp["year"] + 1)[["season", "team", "rating"]]
+    season_talent = talent.rename(columns={"year": "season"})[["season", "team", "talent"]]
+    for side in ("home", "away"):
+        team = f"{side}_team"
+        g = g.merge(
+            ratings.rename(columns={"team": team, **{c: f"{side}_{c}" for c in RATING_COLUMNS}}),
+            on=["season", "slate", team], how="left",
+        )
+        g = g.merge(prior_sp.rename(columns={"team": team, "rating": f"{side}_prior_sp"}), on=["season", team], how="left")
+        g = g.merge(season_talent.rename(columns={"team": team, "talent": f"{side}_talent"}), on=["season", team], how="left")
+    g = g.merge(rest_days(games), on="id", how="left")
+    g = g.merge(vegas_margin(lines).rename(columns={"game_id": "id"}), on="id", how="left")
+    g["home_field"] = (~g["neutral_site"].eq(True)).astype(int)
+    for column in RATING_COLUMNS:
+        g[f"d_{column}"] = g[f"home_{column}"] - g[f"away_{column}"]
+    g["d_prior_sp"] = g["home_prior_sp"] - g["away_prior_sp"]
+    g["d_talent"] = g["home_talent"] - g["away_talent"]
+    g["d_rest"] = g["home_rest"] - g["away_rest"]
+    g["margin"] = np.where(g["completed"].eq(True), g["home_points"] - g["away_points"], np.nan)
+    return g.rename(columns={"id": "game_id"})[GAME_COLUMNS + FEATURES].reset_index(drop=True)

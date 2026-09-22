@@ -3,7 +3,8 @@ import pandas as pd
 import pytest
 
 from psu.features import (
-    MAX_REST, league_means, rest_days, rolling_ratings, season_ratings, slate_index, vegas_margin,
+    FEATURES, MAX_REST, game_features, league_means, rest_days, rolling_ratings, season_ratings,
+    slate_index, vegas_margin,
 )
 
 SCHEDULE = [(1, "A", "B"), (1, "C", "D"), (2, "A", "C"), (2, "B", "D"), (3, "A", "D"), (3, "B", "C")]
@@ -98,3 +99,28 @@ def test_shrinkage_blends_prior_and_current():
     all_prior = rolling_ratings(plays, games, alpha=1.0, shrink_plays=10**9).set_index(["season", "slate", "team"])
     assert no_shrink.loc[(2024, 3, "A"), "off_epa"] == pytest.approx(current.loc["A", "off_epa"])
     assert all_prior.loc[(2024, 3, "A"), "off_epa"] == pytest.approx(prior.loc["A", "off_epa"], abs=1e-6)
+
+
+def test_game_features_are_home_minus_away_and_fbs_only():
+    g23, g24 = make_games(2023), make_games(2024)
+    g24.loc[0, "neutral_site"] = True
+    g24.loc[5, ["completed", "home_points", "away_points"]] = [False, np.nan, np.nan]
+    fcs = make_games(2024, schedule=[(4, "A", "F")], start_id=50)
+    fcs["away_classification"] = "fcs"
+    games = pd.concat([g23, g24, fcs], ignore_index=True)
+    plays = make_plays(pd.concat([g23, g24], ignore_index=True))
+    lines = pd.DataFrame({"game_id": [202400], "spread": [-3.5]})
+    sp = pd.DataFrame({"year": [2023, 2023, 2024], "team": ["A", "B", "A"], "rating": [20.0, 5.0, 99.0]})
+    talent = pd.DataFrame({"year": [2024, 2024], "team": ["A", "B"], "talent": [900.0, 700.0]})
+
+    f = game_features(plays, games, lines, sp, talent, alpha=1.0, shrink_plays=10).set_index("game_id")
+    assert set(FEATURES) <= set(f.columns)
+    assert 202450 not in f.index  # FCS opponent excluded
+    row = f.loc[202400]  # 2024 week 1: A (home) vs B, neutral site
+    assert row["home_field"] == 0 and row["margin"] == 7 and row["vegas_margin"] == 3.5
+    assert row["d_prior_sp"] == 15.0  # 2023 SP+, not 2024's 99
+    assert row["d_talent"] == 200.0
+    assert row["d_off_epa"] > 0  # A's 2023 offense beat B's
+    assert f.loc[202401, "home_field"] == 1
+    assert np.isnan(f.loc[202405, "margin"])
+    assert np.isnan(f.loc[202401, "vegas_margin"])
