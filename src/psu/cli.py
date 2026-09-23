@@ -1,4 +1,4 @@
-"""Command-line entry point: `psu ingest`, `psu status`, `psu build` and `psu train`."""
+"""Command-line entry point: `psu ingest`, `psu status`, `psu build`, `psu train` and `psu simulate`."""
 from __future__ import annotations
 
 import argparse
@@ -9,6 +9,7 @@ from psu import config, db
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import ingest
+from psu.simulate import MissingModel, load_sigma, report_markdown as sim_report, simulate_season, write_results
 from psu.train import load_features, report_markdown, train_and_save
 from psu.transform import GarbageTime
 
@@ -46,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
     trn = sub.add_parser("train", help="Backtest and train the game model; write predictions (no API calls)")
     trn.add_argument("--alpha", type=float, default=20.0, help="Ridge shrinkage for rolling team ratings")
     trn.add_argument("--shrink-plays", type=int, default=75, help="Plays before a season's own data outweighs last season")
+    sim = sub.add_parser("simulate", help="Simulate the rest of the season (no API calls)")
+    sim.add_argument("--sims", type=int, default=10_000, help="Number of simulated seasons")
+    sim.add_argument("--seed", type=int, default=0, help="Random seed (same seed, same results)")
+    sim.add_argument("--tau", type=float, default=5.0, help="Spread (points) of each team's season-long strength draw")
+    sim.add_argument("--team", default=config.TEAM, help="Team to report on")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -95,6 +101,24 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             con.close()
         print(report_markdown(report))
+        return 0
+
+    if args.command == "simulate":
+        try:
+            sigma = load_sigma(settings.db_path.parent)
+            con = db.connect(settings.db_path)
+            try:
+                result = simulate_season(
+                    con, season=settings.current_season, sigma=sigma, team=args.team,
+                    n_sims=args.sims, seed=args.seed, tau=args.tau,
+                )
+                write_results(con, result, settings.db_path.parent)
+            finally:
+                con.close()
+        except (MissingModel, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(sim_report(result))
         return 0
 
     try:
