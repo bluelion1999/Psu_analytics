@@ -10,3 +10,4 @@ data/*.duckdb.wal
 .superpowers/
 data/models/
 data/reports/
+graphify-out/
