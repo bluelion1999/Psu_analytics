@@ -172,10 +172,10 @@ Results through 2026-09-20 (Penn State 3-0):
 
 | Mean wins | P(10+ wins) | P(title game) | P(Big Ten champ) | P(CFP) |
 |---|---|---|---|---|
-| 9.47 | 51.7% | 29.2% | 11.8% | 48.2% |
+| 9.47 | 51.7% | 29.2% | 10.7% | 48.0% |
 
 The most likely finishes are 10-2 (24.7%) and 9-3 (23.1%). Ohio State is the Big Ten favourite
-(33.0%), ahead of Oregon (18.7%), Indiana (12.4%) and Penn State (11.8%).
+(34.2%), ahead of Oregon (18.9%), Indiana (12.7%) and Penn State (10.7%).
 
 Choosing tau: team-level residuals from 2024 and 2025 imply a tau of about 3.4 to 3.9. Those
 predictions are in-sample, so that understates it, and the default is 5. The headline odds barely

@@ -37,7 +37,7 @@ Constraints: no API calls; full run under one minute; results stored in DuckDB f
 
 `fit_ratings(upcoming: DataFrame, ridge: float = 1.0) -> Ratings`
 
-- Least squares on `pred_margin ≈ hfa·(not neutral) + r[home] − r[away]` over all upcoming current-season predictions, with a small ridge penalty on team ratings, ratings centred at mean 0.
+- Least squares on `pred_margin ≈ hfa·(not neutral) + r[home] − r[away]` over every current-season prediction (played or not), with a small ridge penalty on team ratings, ratings centred at mean 0.
 - Returns a `Ratings` dataclass: `hfa: float`, `rating: dict[str, float]`, and `neutral_margin(a, b) -> float` = `rating[a] − rating[b]`.
 - Used only for games without a `pred_margin`, meaning the neutral-site title game. Regular-season games keep their own `pred_margin`, which carries per-game features (rest, talent, and so on).
 
