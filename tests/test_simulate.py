@@ -155,3 +155,8 @@ def test_unknown_team_is_a_value_error():
         run(team="Nobody")
 
 
+def test_negative_tau_raises_before_any_draw():
+    with pytest.raises(ValueError, match="tau"):
+        run(tau=-1)
+
+

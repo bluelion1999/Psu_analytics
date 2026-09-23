@@ -24,6 +24,16 @@ def test_load_sigma_missing_file(tmp_path):
     assert load_sigma(tmp_path) == 16.25
 
 
+def test_load_sigma_missing_key_or_bad_json_is_missing_model(tmp_path):
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports" / "game_model.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(MissingModel, match="psu train"):
+        load_sigma(tmp_path)
+    (tmp_path / "reports" / "game_model.json").write_text("not json", encoding="utf-8")
+    with pytest.raises(MissingModel, match="psu train"):
+        load_sigma(tmp_path)
+
+
 def test_simulate_season_from_duckdb_matches_dataframe_run():
     con = connect(":memory:")
     seed_league_db(con)

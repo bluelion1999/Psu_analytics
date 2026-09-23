@@ -13,7 +13,7 @@ import pandas as pd
 from psu.build import _write
 from psu.config import TEAM
 from psu.sim.ratings import fit_ratings
-from psu.sim.season import draw_margins, draw_matchups, draw_strengths
+from psu.sim.season import draw_margins, draw_matchups, draw_strengths, game_noise_sd
 from psu.sim.standings import top_two
 
 log = logging.getLogger(__name__)
@@ -62,6 +62,7 @@ def run_simulation(
 ) -> SimResult:
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
+    game_noise_sd(sigma, tau)  # fail fast on a bad tau, before any draw
     rng = np.random.default_rng(seed)
     season_games = games[games["season"] == season]
     regular_all = season_games[season_games["season_type"] == "regular"]
@@ -235,7 +236,11 @@ def load_sigma(out_dir: Path) -> float:
     path = Path(out_dir) / "reports" / "game_model.json"
     if not path.exists():
         raise MissingModel(f"{path} not found; run `psu train` first")
-    return float(json.loads(path.read_text(encoding="utf-8"))["sigma"])
+    try:
+        sigma = json.loads(path.read_text(encoding="utf-8"))["sigma"]
+    except (json.JSONDecodeError, KeyError) as e:
+        raise MissingModel(f"{path} has no usable sigma; run `psu train` first") from e
+    return float(sigma)
 
 
 def simulate_season(
@@ -296,17 +301,23 @@ def write_results(con: duckdb.DuckDBPyConnection, result: SimResult, out_dir: Pa
         "p_10_plus": result.p_10_plus, "p_title_game": result.p_title_game,
         "p_conf_champ": result.p_conf_champ, "p_cfp": result.p_cfp,
     }])[SUMMARY_COLUMNS]
-    _write(con, "sim_team_summary", summary)
-    _write(
-        con, "sim_win_totals",
-        result.win_totals.assign(season=result.season, team=result.team)[["season", "team", "wins", "prob"]],
-    )
-    _write(
-        con, "sim_conference",
-        result.conference.assign(season=result.season)[
-            ["season", "team", "mean_conf_wins", "p_title_game", "p_conf_champ"]
-        ],
-    )
+    con.execute("BEGIN TRANSACTION")
+    try:
+        _write(con, "sim_team_summary", summary)
+        _write(
+            con, "sim_win_totals",
+            result.win_totals.assign(season=result.season, team=result.team)[["season", "team", "wins", "prob"]],
+        )
+        _write(
+            con, "sim_conference",
+            result.conference.assign(season=result.season)[
+                ["season", "team", "mean_conf_wins", "p_title_game", "p_conf_champ"]
+            ],
+        )
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    con.execute("COMMIT")
     reports = Path(out_dir) / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     (reports / "season_sim.md").write_text(report_markdown(result), encoding="utf-8")
