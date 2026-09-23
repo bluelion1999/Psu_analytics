@@ -1,4 +1,5 @@
 """Project-wide settings: team, season range, paths, and API budget knobs."""
+
 from __future__ import annotations
 
 import os

@@ -1,4 +1,5 @@
 """Shared helpers for dashboard data: the database path, read-only access, table checks and a team's view of games."""
+
 from __future__ import annotations
 
 import os
@@ -13,12 +14,20 @@ import pandas as pd
 from psu import config
 
 SOURCES = {
-    "games": "psu ingest", "plays": "psu ingest", "drives": "psu ingest", "team_game_stats": "psu ingest",
+    "games": "psu ingest",
+    "plays": "psu ingest",
+    "drives": "psu ingest",
+    "team_game_stats": "psu ingest",
     "player_game_stats": "psu ingest",
-    "plays_enriched": "psu build", "team_offense": "psu build", "team_defense": "psu build",
-    "team_havoc": "psu build", "team_turnovers": "psu build",
+    "plays_enriched": "psu build",
+    "team_offense": "psu build",
+    "team_defense": "psu build",
+    "team_havoc": "psu build",
+    "team_turnovers": "psu build",
     "game_predictions": "psu train",
-    "sim_team_summary": "psu simulate", "sim_win_totals": "psu simulate", "sim_conference": "psu simulate",
+    "sim_team_summary": "psu simulate",
+    "sim_win_totals": "psu simulate",
+    "sim_conference": "psu simulate",
 }
 
 
@@ -54,9 +63,7 @@ def read(fn: Callable[..., Any], *args: Any, path: Path | None = None) -> Any:
 
 
 def has_table(con: duckdb.DuckDBPyConnection, table: str) -> bool:
-    return con.execute(
-        "SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [table]
-    ).fetchone()[0] > 0
+    return con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [table]).fetchone()[0] > 0
 
 
 def require(con: duckdb.DuckDBPyConnection, *tables: str) -> None:
@@ -89,14 +96,13 @@ def team_games(con: duckdb.DuckDBPyConnection, season: int, team: str) -> pd.Dat
     df = con.execute(TEAM_GAMES_SQL, {"season": season, "team": team}).df()
     # DuckDB hands back nullable integers (pd.NA) for an all-null column; floats keep comparisons simple.
     df[["team_points", "opp_points"]] = df[["team_points", "opp_points"]].astype(float)
-    df["completed"] = (
-        df["completed"].fillna(False).astype(bool) & df["team_points"].notna() & df["opp_points"].notna()
-    )
+    df["completed"] = df["completed"].fillna(False).astype(bool) & df["team_points"].notna() & df["opp_points"].notna()
     df["conference_game"] = df["conference_game"].astype(bool)
     df["is_home"] = df["is_home"].astype(bool)
     df["result"] = pd.Series(  # object dtype keeps None (pandas would otherwise turn it into NaN)
         np.where(df["completed"], np.where(df["team_points"] > df["opp_points"], "W", "L"), None),
-        index=df.index, dtype=object,
+        index=df.index,
+        dtype=object,
     )
     return df
 
@@ -118,16 +124,20 @@ def team_conference(con: duckdb.DuckDBPyConnection, season: int, team: str) -> s
 
 def conference_members(con: duckdb.DuckDBPyConnection, season: int, conference: str) -> list[str]:
     require(con, "games")
-    return con.execute(
-        """
+    return (
+        con.execute(
+            """
         SELECT DISTINCT team FROM (
             SELECT home_team AS team FROM games WHERE season = $season AND home_conference = $conf
             UNION
             SELECT away_team FROM games WHERE season = $season AND away_conference = $conf
         ) ORDER BY team
         """,
-        {"season": season, "conf": conference},
-    ).df()["team"].tolist()
+            {"season": season, "conf": conference},
+        )
+        .df()["team"]
+        .tolist()
+    )
 
 
 def benchmark(

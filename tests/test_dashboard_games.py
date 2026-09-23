@@ -1,10 +1,16 @@
 import numpy as np
 import pytest
+from conftest import seed_dashboard_db
 from scipy.stats import norm
 
-from conftest import seed_dashboard_db
 from psu.dashboard.games import (
-    BOX_STATS, box_score, drive_chart, game_options, line_scores, top_plays, win_probability,
+    BOX_STATS,
+    box_score,
+    drive_chart,
+    game_options,
+    line_scores,
+    top_plays,
+    win_probability,
 )
 from psu.dashboard.winprob import in_game_wp
 from psu.db import connect
@@ -57,7 +63,15 @@ def test_box_score_away_then_home_with_blanks(con):
 def test_drive_chart_positions_from_own_goal(con):
     d = drive_chart(con, 101)
     assert list(d.columns) == [
-        "drive_number", "offense", "quarter", "start_pos", "end_pos", "plays", "yards", "result", "time",
+        "drive_number",
+        "offense",
+        "quarter",
+        "start_pos",
+        "end_pos",
+        "plays",
+        "yards",
+        "result",
+        "time",
     ]
     psu = d[d["offense"] == "Penn State"].iloc[0]
     assert (psu["start_pos"], psu["end_pos"], psu["result"], psu["time"]) == (25, 95, "TD", "4:30")

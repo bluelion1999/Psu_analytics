@@ -3,8 +3,8 @@ import logging
 import numpy as np
 import pandas as pd
 import pytest
-
 from conftest import synthetic_league
+
 from psu.simulate import MissingModel, makes_cfp, run_simulation
 
 SIGMA = 16.0
@@ -107,12 +107,25 @@ def test_title_game_loss_counts_toward_cfp_losses():
 def _with_title_game(completed=False, home_points=None, away_points=None):
     """synthetic_league() plus a week-6 Big Ten title game row, id 10, A vs B."""
     games, predictions = synthetic_league()
-    title = pd.DataFrame([{
-        "id": 10, "season": 2026, "week": 6, "season_type": "regular",
-        "start_date": pd.Timestamp(2026, 10, 6), "completed": completed,
-        "home_team": "A", "away_team": "B", "home_conference": "Big Ten", "away_conference": "Big Ten",
-        "home_points": home_points, "away_points": away_points, "notes": "Big Ten Championship",
-    }])
+    title = pd.DataFrame(
+        [
+            {
+                "id": 10,
+                "season": 2026,
+                "week": 6,
+                "season_type": "regular",
+                "start_date": pd.Timestamp(2026, 10, 6),
+                "completed": completed,
+                "home_team": "A",
+                "away_team": "B",
+                "home_conference": "Big Ten",
+                "away_conference": "Big Ten",
+                "home_points": home_points,
+                "away_points": away_points,
+                "notes": "Big Ten Championship",
+            }
+        ]
+    )
     games = pd.concat([games, title], ignore_index=True)
     games[["home_points", "away_points"]] = games[["home_points", "away_points"]].astype("Int64")
     return games, predictions
@@ -158,5 +171,3 @@ def test_unknown_team_is_a_value_error():
 def test_negative_tau_raises_before_any_draw():
     with pytest.raises(ValueError, match="tau"):
         run(tau=-1)
-
-

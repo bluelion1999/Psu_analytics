@@ -18,8 +18,17 @@ def synthetic(seed=0, n=300, venue="neutral", home_boost=0.0):
         for i, value in enumerate(y):
             where = v or ("home" if i % 2 == 0 else "away")
             bump = home_boost if where == "home" else -home_boost if where == "away" else 0.0
-            rows.append({"season": 2024, "offense": off, "defense": de, "ppa": value + bump,
-                         "success": value > 0.1, "venue": where, "garbage": False})
+            rows.append(
+                {
+                    "season": 2024,
+                    "offense": off,
+                    "defense": de,
+                    "ppa": value + bump,
+                    "success": value > 0.1,
+                    "venue": where,
+                    "garbage": False,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -55,8 +64,24 @@ def test_adjusted_levels_are_centred_on_the_league_average():
 
 
 def test_garbage_time_excluded_by_default_and_value_validated():
-    df = pd.concat([synthetic(), pd.DataFrame([{"season": 2024, "offense": "B", "defense": "C", "ppa": 50.0,
-                                               "success": True, "venue": "neutral", "garbage": True}])])
+    df = pd.concat(
+        [
+            synthetic(),
+            pd.DataFrame(
+                [
+                    {
+                        "season": 2024,
+                        "offense": "B",
+                        "defense": "C",
+                        "ppa": 50.0,
+                        "success": True,
+                        "venue": "neutral",
+                        "garbage": True,
+                    }
+                ]
+            ),
+        ]
+    )
     out = opponent_adjust(df, "ppa", alpha=1.0).set_index("team")
     assert out.loc["B", "off_plays"] == 600
     with pytest.raises(ValueError):

@@ -1,9 +1,11 @@
 """Turn raw CFBD JSON (camelCase, nested) into flat snake_case DataFrames, one shape per table."""
+
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 

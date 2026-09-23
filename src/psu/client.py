@@ -4,6 +4,7 @@ The free CFBD tier has a monthly call limit, so every response is cached under
 <raw_dir>/<endpoint>/<params>.json and served from there unless the caller
 passes a max_age the cached copy is older than.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,10 +12,11 @@ import logging
 import os
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ def cache_key(params: dict[str, Any]) -> str:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class CachedClient:

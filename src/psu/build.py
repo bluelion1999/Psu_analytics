@@ -1,4 +1,5 @@
 """Materialize the Phase 2 metric tables in DuckDB from the raw Phase 1 tables (no API calls)."""
+
 from __future__ import annotations
 
 import duckdb
@@ -10,8 +11,14 @@ from psu.transform import Explosive, GarbageTime, enrich_plays
 
 SPLITS = ("down", "quarter", "score_state", "venue", "opp_conference")
 DERIVED_TABLES = (
-    "plays_enriched", "team_offense", "team_defense", "team_splits",
-    "team_adjusted", "team_havoc", "team_turnovers", "team_red_zone",
+    "plays_enriched",
+    "team_offense",
+    "team_defense",
+    "team_splits",
+    "team_adjusted",
+    "team_havoc",
+    "team_turnovers",
+    "team_red_zone",
 )
 _PLAY_COLUMNS = (
     "id, game_id, drive_id, season, week, season_type, offense, offense_conference, defense, "
@@ -45,18 +52,34 @@ def _splits(enriched: pd.DataFrame) -> pd.DataFrame:
 
 def _adjusted(enriched: pd.DataFrame, alpha: float) -> pd.DataFrame:
     def renamed(value: str, tag: str) -> pd.DataFrame:
-        return opponent_adjust(enriched, value, alpha=alpha).rename(columns={
-            "off_raw": f"off_{tag}_raw", "off_adj": f"off_{tag}_adj",
-            "def_raw": f"def_{tag}_raw", "def_adj": f"def_{tag}_adj",
-        })
+        return opponent_adjust(enriched, value, alpha=alpha).rename(
+            columns={
+                "off_raw": f"off_{tag}_raw",
+                "off_adj": f"off_{tag}_adj",
+                "def_raw": f"def_{tag}_raw",
+                "def_adj": f"def_{tag}_adj",
+            }
+        )
 
     epa = renamed("ppa", "epa")
     sr = renamed("success", "sr").drop(columns=["off_plays", "def_plays"])
     merged = epa.merge(sr, on=["season", "team"])
-    return merged[[
-        "season", "team", "off_epa_raw", "off_epa_adj", "def_epa_raw", "def_epa_adj",
-        "off_sr_raw", "off_sr_adj", "def_sr_raw", "def_sr_adj", "off_plays", "def_plays",
-    ]]
+    return merged[
+        [
+            "season",
+            "team",
+            "off_epa_raw",
+            "off_epa_adj",
+            "def_epa_raw",
+            "def_epa_adj",
+            "off_sr_raw",
+            "off_sr_adj",
+            "def_sr_raw",
+            "def_sr_adj",
+            "off_plays",
+            "def_plays",
+        ]
+    ]
 
 
 def _red_zone(enriched: pd.DataFrame, drives: pd.DataFrame) -> pd.DataFrame:

@@ -1,4 +1,5 @@
 """Opponent adjustment: per-season ridge regression of play outcomes on offense and defense team effects."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -35,28 +36,34 @@ def opponent_adjust(
         teams = pd.Index(sorted(set(s["offense"]) | set(s["defense"])))
         width = len(teams)
         home = np.select([s["venue"].eq("home"), s["venue"].eq("away")], [1.0, -1.0], 0.0)
-        x = sparse.hstack([
-            _one_hot(teams.get_indexer(s["offense"]), width),
-            _one_hot(teams.get_indexer(s["defense"]), width),
-            sparse.csr_matrix(home.reshape(-1, 1)),
-        ]).tocsr()
+        x = sparse.hstack(
+            [
+                _one_hot(teams.get_indexer(s["offense"]), width),
+                _one_hot(teams.get_indexer(s["defense"]), width),
+                sparse.csr_matrix(home.reshape(-1, 1)),
+            ]
+        ).tocsr()
         y = s[value].astype(float).to_numpy()
         model = Ridge(alpha=alpha).fit(x, y)
         values = s[value].astype(float)
-        c_off, c_def = model.coef_[:width], model.coef_[width:2 * width]
+        c_off, c_def = model.coef_[:width], model.coef_[width : 2 * width]
         off_plays = s.groupby("offense").size().reindex(teams, fill_value=0).to_numpy()
         def_plays = s.groupby("defense").size().reindex(teams, fill_value=0).to_numpy()
         mean = y.mean()
         off_adj = mean + c_off - np.average(c_off, weights=off_plays)
         def_adj = mean + c_def - np.average(c_def, weights=def_plays)
-        frames.append(pd.DataFrame({
-            "season": season,
-            "team": teams,
-            "off_raw": values.groupby(s["offense"]).mean().reindex(teams).to_numpy(),
-            "off_adj": off_adj,
-            "def_raw": values.groupby(s["defense"]).mean().reindex(teams).to_numpy(),
-            "def_adj": def_adj,
-            "off_plays": off_plays,
-            "def_plays": def_plays,
-        }))
+        frames.append(
+            pd.DataFrame(
+                {
+                    "season": season,
+                    "team": teams,
+                    "off_raw": values.groupby(s["offense"]).mean().reindex(teams).to_numpy(),
+                    "off_adj": off_adj,
+                    "def_raw": values.groupby(s["defense"]).mean().reindex(teams).to_numpy(),
+                    "def_adj": def_adj,
+                    "off_plays": off_plays,
+                    "def_plays": def_plays,
+                }
+            )
+        )
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COLUMNS)

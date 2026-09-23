@@ -1,4 +1,5 @@
 """DuckDB storage: declared table schemas and an idempotent upsert."""
+
 from __future__ import annotations
 
 import logging
@@ -231,9 +232,7 @@ def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnect
 
 
 def _table_columns(con: duckdb.DuckDBPyConnection, table: str) -> set[str]:
-    result = con.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_name = ?", [table]
-    ).fetchall()
+    result = con.execute("SELECT column_name FROM information_schema.columns WHERE table_name = ?", [table]).fetchall()
     return {r[0] for r in result}
 
 
@@ -321,6 +320,5 @@ def record_load(con: duckdb.DuckDBPyConnection, endpoint: str, cache_key: str, f
 def row_counts(con: duckdb.DuckDBPyConnection) -> dict[str, int]:
     existing = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
     return {
-        name: con.execute(f"SELECT count(*) FROM {_q(name)}").fetchone()[0] if name in existing else 0
-        for name in SPECS
+        name: con.execute(f"SELECT count(*) FROM {_q(name)}").fetchone()[0] if name in existing else 0 for name in SPECS
     }

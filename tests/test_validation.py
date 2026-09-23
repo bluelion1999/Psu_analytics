@@ -6,6 +6,7 @@ CFBD's advanced stats count every play with a PPA value (including End Period ro
 touchdowns charged to the defense) and include garbage time. Under that convention our data matches
 CFBD exactly. Our metrics use scrimmage plays only, so they are compared with looser tolerances.
 """
+
 from pathlib import Path
 
 import duckdb

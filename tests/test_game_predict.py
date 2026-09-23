@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-
 from conftest import synthetic_features
+
 from psu.models import game_predict as gp
 
 

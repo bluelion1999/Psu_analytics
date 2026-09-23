@@ -1,7 +1,8 @@
 """Team efficiency metrics from enriched plays and box scores. Every function returns a tidy DataFrame."""
+
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -31,19 +32,21 @@ def efficiency(
     keys = [side, *by]
     grouped = df.groupby(keys)
     rush = df["play_class"] == "rush"
-    out = pd.DataFrame({
-        "plays": grouped.size(),
-        "epa_per_play": grouped["ppa"].mean(),
-        "rush_epa": _masked_mean(df, keys, "ppa", rush),
-        "pass_epa": _masked_mean(df, keys, "ppa", ~rush),
-        "success_rate": grouped["success"].mean(),
-        "rush_success_rate": _masked_mean(df, keys, "success", rush),
-        "pass_success_rate": _masked_mean(df, keys, "success", ~rush),
-        "explosiveness": _masked_mean(df, keys, "ppa", df["success"]),
-        "explosive_rate": grouped["explosive"].mean(),
-        "third_down_rate": _masked_mean(df, keys, "success", df["down"] == 3),
-        "turnover_rate": grouped["turnover"].mean(),
-    })
+    out = pd.DataFrame(
+        {
+            "plays": grouped.size(),
+            "epa_per_play": grouped["ppa"].mean(),
+            "rush_epa": _masked_mean(df, keys, "ppa", rush),
+            "pass_epa": _masked_mean(df, keys, "ppa", ~rush),
+            "success_rate": grouped["success"].mean(),
+            "rush_success_rate": _masked_mean(df, keys, "success", rush),
+            "pass_success_rate": _masked_mean(df, keys, "success", ~rush),
+            "explosiveness": _masked_mean(df, keys, "ppa", df["success"]),
+            "explosive_rate": grouped["explosive"].mean(),
+            "third_down_rate": _masked_mean(df, keys, "success", df["down"] == 3),
+            "turnover_rate": grouped["turnover"].mean(),
+        }
+    )
     return out.reset_index().rename(columns={side: "team"})
 
 
@@ -86,11 +89,13 @@ def havoc_rate(team_game_stats: pd.DataFrame, enriched: pd.DataFrame) -> pd.Data
 def turnover_margin(team_game_stats: pd.DataFrame) -> pd.DataFrame:
     wide = _with_opponent(_box_wide(team_game_stats, ("turnovers",)), ["turnovers"])
     grouped = wide.groupby(["season", "team"])
-    out = pd.DataFrame({
-        "games": grouped.size(),
-        "giveaways": grouped["turnovers"].sum(),
-        "takeaways": grouped["opp_turnovers"].sum(),
-    })
+    out = pd.DataFrame(
+        {
+            "games": grouped.size(),
+            "giveaways": grouped["turnovers"].sum(),
+            "takeaways": grouped["opp_turnovers"].sum(),
+        }
+    )
     out["margin"] = out["takeaways"] - out["giveaways"]
     return out.reset_index()
 
@@ -112,14 +117,14 @@ def red_zone(
     trips = drives[drives["id"].isin(reached)].copy()
     diff = trips["end_offense_score"] - trips["start_offense_score"]
     trips["touchdown"] = trips["drive_result"].eq("TD")
-    trips["points"] = np.select(
-        [trips["touchdown"], trips["drive_result"].eq("FG")], [diff.clip(6, 8), 3], 0
-    )
+    trips["points"] = np.select([trips["touchdown"], trips["drive_result"].eq("FG")], [diff.clip(6, 8), 3], 0)
     grouped = trips.groupby([side, *by])
-    out = pd.DataFrame({
-        "trips": grouped.size(),
-        "touchdowns": grouped["touchdown"].sum(),
-        "points_per_trip": grouped["points"].mean(),
-    })
+    out = pd.DataFrame(
+        {
+            "trips": grouped.size(),
+            "touchdowns": grouped["touchdown"].sum(),
+            "points_per_trip": grouped["points"].mean(),
+        }
+    )
     out["td_rate"] = out["touchdowns"] / out["trips"]
     return out.reset_index().rename(columns={side: "team"})

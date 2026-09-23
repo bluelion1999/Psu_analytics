@@ -1,4 +1,5 @@
 """Power ratings fitted to the game model's own predicted margins (used for games with no prediction)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,4 +34,4 @@ def fit_ratings(upcoming: pd.DataFrame, ridge: float = 1.0) -> Ratings:
     penalty[k] = 1e-9  # hfa is unpenalised; the tiny term keeps an all-neutral slate solvable
     coef = np.linalg.solve(x.T @ x + np.diag(penalty), x.T @ y)
     centred = coef[:k] - coef[:k].mean()
-    return Ratings(float(coef[k]), {t: float(v) for t, v in zip(teams, centred)})
+    return Ratings(float(coef[k]), {t: float(v) for t, v in zip(teams, centred, strict=True)})

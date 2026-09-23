@@ -1,4 +1,5 @@
 """Season player tables (passing, rushing, receiving) from CFBD box scores."""
+
 from __future__ import annotations
 
 import duckdb
@@ -18,9 +19,11 @@ _RATE = {"passing": "yds_per_att", "rushing": "yds_per_carry", "receiving": "yds
 
 def teams(con: duckdb.DuckDBPyConnection, season: int) -> list[str]:
     require(con, "player_game_stats")
-    return con.execute(
-        "SELECT DISTINCT team FROM player_game_stats WHERE season = ? ORDER BY team", [season]
-    ).df()["team"].tolist()
+    return (
+        con.execute("SELECT DISTINCT team FROM player_game_stats WHERE season = ? ORDER BY team", [season])
+        .df()["team"]
+        .tolist()
+    )
 
 
 def _num(wide: pd.DataFrame, stat_type: str) -> pd.Series:
@@ -35,19 +38,26 @@ def _per_game(kind: str, wide: pd.DataFrame) -> pd.DataFrame:
             parts = wide["C/ATT"].astype(str).str.extract(r"(\d+)\s*/\s*(\d+)").astype(float).fillna(0.0)
         else:
             parts = pd.DataFrame({0: 0.0, 1: 0.0}, index=wide.index)
-        return pd.DataFrame({
-            "comp": parts[0], "att": parts[1], "yards": _num(wide, "YDS"), "td": _num(wide, "TD"),
-            "int": _num(wide, "INT"),
-        })
-    return pd.DataFrame({
-        VOLUME[kind]: _num(wide, _VOLUME_STAT[kind]), "yards": _num(wide, "YDS"), "td": _num(wide, "TD"),
-        "long": _num(wide, "LONG"),
-    })
+        return pd.DataFrame(
+            {
+                "comp": parts[0],
+                "att": parts[1],
+                "yards": _num(wide, "YDS"),
+                "td": _num(wide, "TD"),
+                "int": _num(wide, "INT"),
+            }
+        )
+    return pd.DataFrame(
+        {
+            VOLUME[kind]: _num(wide, _VOLUME_STAT[kind]),
+            "yards": _num(wide, "YDS"),
+            "td": _num(wide, "TD"),
+            "long": _num(wide, "LONG"),
+        }
+    )
 
 
-def player_table(
-    con: duckdb.DuckDBPyConnection, season: int, team: str, kind: str, minimum: int = 0
-) -> pd.DataFrame:
+def player_table(con: duckdb.DuckDBPyConnection, season: int, team: str, kind: str, minimum: int = 0) -> pd.DataFrame:
     if kind not in COLUMNS:
         raise ValueError(f"kind must be one of {sorted(COLUMNS)}, not {kind!r}")
     require(con, "player_game_stats")

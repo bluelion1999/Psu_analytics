@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
-
 from conftest import seed_dashboard_db
+
 from psu.dashboard.players import COLUMNS, player_table, teams
 from psu.db import SPECS, connect, upsert
 
@@ -42,9 +42,18 @@ def test_minimum_volume_filter(con):
 
 def test_malformed_stats_count_as_zero(con):
     rows = [
-        {"game_id": 101, "season": 2025, "week": 1, "season_type": "regular", "team": "Penn State",
-         "category": "passing", "stat_type": stat_type, "athlete_id": "psu-backup", "athlete_name": "Backup QB",
-         "stat": stat}
+        {
+            "game_id": 101,
+            "season": 2025,
+            "week": 1,
+            "season_type": "regular",
+            "team": "Penn State",
+            "category": "passing",
+            "stat_type": stat_type,
+            "athlete_id": "psu-backup",
+            "athlete_name": "Backup QB",
+            "stat": stat,
+        }
         for stat_type, stat in (("YDS", "--"), ("TD", "1"))  # no C/ATT at all
     ]
     upsert(con, SPECS["player_game_stats"], pd.DataFrame(rows))

@@ -68,6 +68,7 @@ def test_build_rejects_bad_garbage_spec(settings, capsys):
 
 def test_build_writes_tables(settings, capsys):
     from conftest import seed_raw_tables
+
     from psu import db
 
     con = db.connect(settings.db_path)
@@ -85,6 +86,7 @@ def test_train_requires_ingested_data(settings, capsys):
 
 def test_train_reports_and_writes_outputs(settings, capsys, monkeypatch):
     from conftest import seed_raw_tables, synthetic_features
+
     from psu import db
 
     con = db.connect(settings.db_path)
@@ -98,6 +100,7 @@ def test_train_reports_and_writes_outputs(settings, capsys, monkeypatch):
 
 def test_train_with_too_few_seasons_is_a_clean_error(settings, capsys, monkeypatch):
     from conftest import seed_raw_tables, synthetic_features
+
     from psu import db
 
     con = db.connect(settings.db_path)
@@ -111,6 +114,7 @@ def test_train_with_too_few_seasons_is_a_clean_error(settings, capsys, monkeypat
 
 def _trained(settings):
     from conftest import seed_league_db
+
     from psu import db
 
     reports = settings.db_path.parent / "reports"

@@ -1,4 +1,5 @@
 """Season overview: record, schedule with results and pregame lines, and key metrics against conference and FBS."""
+
 import pandas as pd
 import streamlit as st
 
@@ -22,16 +23,18 @@ left_col.metric("Games left", rec["remaining"])
 
 st.subheader("Schedule")
 score = schedule["team_points"].astype("Int64").astype(str) + "-" + schedule["opp_points"].astype("Int64").astype(str)
-table = pd.DataFrame({
-    "Week": schedule["week"],
-    "Date": pd.to_datetime(schedule["start_date"]).dt.date,
-    "Opponent": schedule["opponent"],
-    "Venue": schedule["venue"].str.title(),
-    "Result": (schedule["result"].fillna("") + " " + score).where(schedule["completed"], ""),
-    "Vegas": fmt(schedule["vegas_margin"], "+.1f"),
-    "Model": fmt(schedule["model_margin"], "+.1f"),
-    "Win prob": fmt(schedule["win_prob"], ".0%"),
-})
+table = pd.DataFrame(
+    {
+        "Week": schedule["week"],
+        "Date": pd.to_datetime(schedule["start_date"]).dt.date,
+        "Opponent": schedule["opponent"],
+        "Venue": schedule["venue"].str.title(),
+        "Result": (schedule["result"].fillna("") + " " + score).where(schedule["completed"], ""),
+        "Vegas": fmt(schedule["vegas_margin"], "+.1f"),
+        "Model": fmt(schedule["model_margin"], "+.1f"),
+        "Win prob": fmt(schedule["win_prob"], ".0%"),
+    }
+)
 st.dataframe(table, hide_index=True)
 st.caption(
     f"Lines are from {TEAM}'s side: +7 means {TEAM} is favoured by 7. "
@@ -45,9 +48,14 @@ if metrics is not None:
         conference = load("common.team_conference", season, TEAM) or "Conference"
     except MissingData:
         conference = "Conference"
-    shown = metrics.drop(columns="higher_is_better").rename(columns={
-        "metric": "Metric", "value": TEAM, "conference_avg": f"{conference} avg", "national_avg": "FBS avg",
-    })
+    shown = metrics.drop(columns="higher_is_better").rename(
+        columns={
+            "metric": "Metric",
+            "value": TEAM,
+            "conference_avg": f"{conference} avg",
+            "national_avg": "FBS avg",
+        }
+    )
     for column in shown.columns:
         if column != "Metric":
             shown[column] = fmt(shown[column], ".3f")

@@ -3,6 +3,7 @@
 Raw JSON (not cfbd's pydantic models) because strict model validation can
 reject null fields that older seasons contain.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,9 +36,7 @@ def make_cfbd_fetch(api_key: str) -> Fetch:
     def fetch(endpoint: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         cls_name, method_name = ENDPOINTS[endpoint]
         api = getattr(cfbd, cls_name)(api_client)
-        kwargs = {
-            k: _ENUM_PARAMS[k](v) if k in _ENUM_PARAMS else v for k, v in params.items() if v is not None
-        }
+        kwargs = {k: _ENUM_PARAMS[k](v) if k in _ENUM_PARAMS else v for k, v in params.items() if v is not None}
         response = getattr(api, f"{method_name}_with_http_info")(**kwargs, _preload_content=False)
         return json.loads(response.raw_data)
 

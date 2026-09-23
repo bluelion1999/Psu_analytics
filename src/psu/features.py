@@ -1,4 +1,5 @@
 """Pregame features for game prediction. Every feature for a game uses only information from before its slate."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -53,11 +54,16 @@ def season_ratings(enriched: pd.DataFrame, alpha: float) -> pd.DataFrame:
         return pd.DataFrame(columns=_RATING_FRAME_COLUMNS, index=pd.Index([], name="team"), dtype=float)
     epa = opponent_adjust(enriched, "ppa", alpha=alpha).set_index("team")
     sr = opponent_adjust(enriched, "success", alpha=alpha).set_index("team")
-    return pd.DataFrame({
-        "off_epa": epa["off_adj"], "def_epa": epa["def_adj"],
-        "off_sr": sr["off_adj"], "def_sr": sr["def_adj"],
-        "off_plays": epa["off_plays"], "def_plays": epa["def_plays"],
-    })
+    return pd.DataFrame(
+        {
+            "off_epa": epa["off_adj"],
+            "def_epa": epa["def_adj"],
+            "off_sr": sr["off_adj"],
+            "def_sr": sr["def_adj"],
+            "off_plays": epa["off_plays"],
+            "def_plays": epa["def_plays"],
+        }
+    )
 
 
 def rolling_ratings(
@@ -99,8 +105,20 @@ def rolling_ratings(
 
 FEATURES = ["home_field", "d_off_epa", "d_def_epa", "d_off_sr", "d_def_sr", "d_prior_sp", "d_talent", "d_rest"]
 GAME_COLUMNS = [
-    "game_id", "season", "week", "season_type", "slate", "start_date", "home_team", "away_team",
-    "neutral_site", "completed", "home_points", "away_points", "margin", "vegas_margin",
+    "game_id",
+    "season",
+    "week",
+    "season_type",
+    "slate",
+    "start_date",
+    "home_team",
+    "away_team",
+    "neutral_site",
+    "completed",
+    "home_points",
+    "away_points",
+    "margin",
+    "vegas_margin",
 ]
 
 
@@ -124,10 +142,15 @@ def game_features(
         team = f"{side}_team"
         g = g.merge(
             ratings.rename(columns={"team": team, **{c: f"{side}_{c}" for c in RATING_COLUMNS}}),
-            on=["season", "slate", team], how="left",
+            on=["season", "slate", team],
+            how="left",
         )
-        g = g.merge(prior_sp.rename(columns={"team": team, "rating": f"{side}_prior_sp"}), on=["season", team], how="left")
-        g = g.merge(season_talent.rename(columns={"team": team, "talent": f"{side}_talent"}), on=["season", team], how="left")
+        g = g.merge(
+            prior_sp.rename(columns={"team": team, "rating": f"{side}_prior_sp"}), on=["season", team], how="left"
+        )
+        g = g.merge(
+            season_talent.rename(columns={"team": team, "talent": f"{side}_talent"}), on=["season", team], how="left"
+        )
     g = g.merge(rest_days(games), on="id", how="left")
     g = g.merge(vegas_margin(lines).rename(columns={"game_id": "id"}), on="id", how="left")
     g["home_field"] = (~g["neutral_site"].eq(True)).astype(int)

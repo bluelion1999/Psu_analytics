@@ -1,8 +1,8 @@
 import json
 
 import joblib
-
 from conftest import synthetic_features
+
 from psu.db import connect
 from psu.models import game_predict as gp
 from psu.train import PREDICTION_COLUMNS, report_markdown, train_and_save

@@ -1,6 +1,6 @@
 import pytest
-
 from conftest import seed_dashboard_db
+
 from psu.dashboard.trends import TREND_METRICS, season_trends, weekly_trends
 from psu.db import connect
 
@@ -29,7 +29,14 @@ def test_season_trends_long_format(con):
 def test_weekly_trends_one_row_per_game_and_side(con):
     w = weekly_trends(con, 2025, "Penn State")
     assert list(w.columns) == [
-        "game", "start_date", "week", "opponent", "side", "epa_per_play", "success_rate", "plays",
+        "game",
+        "start_date",
+        "week",
+        "opponent",
+        "side",
+        "epa_per_play",
+        "success_rate",
+        "plays",
     ]
     assert list(w["game"]) == ["Wk 1 Temple", "Wk 1 Temple", "Wk 2 Ohio State", "Wk 2 Ohio State"]
     assert set(w["side"]) == {"offense", "defense"}

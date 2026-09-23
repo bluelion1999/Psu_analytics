@@ -1,9 +1,7 @@
-import math
-
 import pytest
+from conftest import seed_dashboard_db
 from scipy.stats import norm
 
-from conftest import seed_dashboard_db
 from psu.dashboard.common import MissingData
 from psu.dashboard.overview import METRICS, SCHEDULE_COLUMNS, metric_comparison, record, schedule
 from psu.db import connect
@@ -19,10 +17,18 @@ def con():
 
 def test_record_counts_conference_games_and_games_left(con):
     assert record(con, 2025, "Penn State") == {
-        "wins": 2, "losses": 0, "conf_wins": 1, "conf_losses": 0, "remaining": 0,
+        "wins": 2,
+        "losses": 0,
+        "conf_wins": 1,
+        "conf_losses": 0,
+        "remaining": 0,
     }
     assert record(con, 2026, "Penn State") == {
-        "wins": 1, "losses": 0, "conf_wins": 0, "conf_losses": 0, "remaining": 1,
+        "wins": 1,
+        "losses": 0,
+        "conf_wins": 0,
+        "conf_losses": 0,
+        "remaining": 1,
     }
     assert record(con, 2027, "Penn State")["remaining"] == 1
 

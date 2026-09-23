@@ -1,4 +1,5 @@
 """Predictions: upcoming games, the season simulation and the next FBS slate."""
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -15,12 +16,20 @@ if games is not None:
     if games.empty:
         st.info(f"No upcoming {TEAM} games in {season}.")
     else:
-        st.dataframe(pd.DataFrame({
-            "Week": games["week"], "Date": pd.to_datetime(games["start_date"]).dt.date,
-            "Opponent": games["opponent"], "Venue": games["venue"].str.title(),
-            "Model": fmt(games["model_margin"], "+.1f"), "Win prob": fmt(games["win_prob"], ".0%"),
-            "Vegas": fmt(games["vegas_margin"], "+.1f"),
-        }), hide_index=True)
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Week": games["week"],
+                    "Date": pd.to_datetime(games["start_date"]).dt.date,
+                    "Opponent": games["opponent"],
+                    "Venue": games["venue"].str.title(),
+                    "Model": fmt(games["model_margin"], "+.1f"),
+                    "Win prob": fmt(games["win_prob"], ".0%"),
+                    "Vegas": fmt(games["vegas_margin"], "+.1f"),
+                }
+            ),
+            hide_index=True,
+        )
 
 st.subheader("Season simulation")
 summary = load_or_note("predictions.sim_summary", TEAM)
@@ -29,10 +38,16 @@ if summary is not None and int(summary["season"]) != season:
 elif summary is not None:
     tiles = st.columns(5)
     tiles[0].metric("Mean wins", f"{summary['mean_wins']:.1f}")
-    for tile, (label, key) in zip(tiles[1:], (
-        ("P(10+ wins)", "p_10_plus"), ("P(title game)", "p_title_game"),
-        ("P(Big Ten champ)", "p_conf_champ"), ("P(CFP)", "p_cfp"),
-    )):
+    for tile, (label, key) in zip(
+        tiles[1:],
+        (
+            ("P(10+ wins)", "p_10_plus"),
+            ("P(title game)", "p_title_game"),
+            ("P(Big Ten champ)", "p_conf_champ"),
+            ("P(CFP)", "p_cfp"),
+        ),
+        strict=True,
+    ):
         tile.metric(label, f"{summary[key]:.0%}")
     as_of = pd.Timestamp(summary["as_of"]).date() if pd.notna(summary["as_of"]) else "preseason"
     st.caption(
@@ -54,11 +69,15 @@ elif summary is not None:
     if race is not None:
         st.markdown("**Big Ten title race**")
         percent = st.column_config.NumberColumn(format="%.1f%%")
-        st.dataframe(race.assign(p_title_game=race["p_title_game"] * 100, p_conf_champ=race["p_conf_champ"] * 100),
-                     hide_index=True, column_config={
-                         "mean_conf_wins": st.column_config.NumberColumn("Mean conf wins", format="%.2f"),
-                         "p_title_game": percent, "p_conf_champ": percent,
-                     })
+        st.dataframe(
+            race.assign(p_title_game=race["p_title_game"] * 100, p_conf_champ=race["p_conf_champ"] * 100),
+            hide_index=True,
+            column_config={
+                "mean_conf_wins": st.column_config.NumberColumn("Mean conf wins", format="%.2f"),
+                "p_title_game": percent,
+                "p_conf_champ": percent,
+            },
+        )
 
 with st.expander("Next week's FBS games"):
     slate = load_or_note("predictions.next_slate", season)
@@ -66,11 +85,18 @@ with st.expander("Next week's FBS games"):
         if slate.empty:
             st.info(f"No upcoming games in {season}.")
         else:
-            st.dataframe(pd.DataFrame({
-                "Week": slate["week"], "Date": pd.to_datetime(slate["start_date"]).dt.date,
-                "Away": slate["away_team"], "Home": slate["home_team"],
-                "Neutral": slate["neutral_site"].map({True: "Neutral", False: ""}),
-                "Model (home)": fmt(slate["pred_margin"], "+.1f"),
-                "Win prob (home)": fmt(slate["home_win_prob"], ".0%"),
-                "Vegas (home)": fmt(slate["vegas_margin"], "+.1f"),
-            }), hide_index=True)
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "Week": slate["week"],
+                        "Date": pd.to_datetime(slate["start_date"]).dt.date,
+                        "Away": slate["away_team"],
+                        "Home": slate["home_team"],
+                        "Neutral": slate["neutral_site"].map({True: "Neutral", False: ""}),
+                        "Model (home)": fmt(slate["pred_margin"], "+.1f"),
+                        "Win prob (home)": fmt(slate["home_win_prob"], ".0%"),
+                        "Vegas (home)": fmt(slate["vegas_margin"], "+.1f"),
+                    }
+                ),
+                hide_index=True,
+            )

@@ -1,4 +1,5 @@
 """Command-line entry point: `psu ingest`, `psu status`, `psu build`, `psu train` and `psu simulate`."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +10,8 @@ from psu import config, db
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import ingest
-from psu.simulate import MissingModel, load_sigma, report_markdown as sim_report, simulate_season, write_results
+from psu.simulate import MissingModel, load_sigma, simulate_season, write_results
+from psu.simulate import report_markdown as sim_report
 from psu.train import load_features, report_markdown, train_and_save
 from psu.transform import GarbageTime
 
@@ -46,7 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("--alpha", type=float, default=50.0, help="Ridge shrinkage for opponent adjustment")
     trn = sub.add_parser("train", help="Backtest and train the game model; write predictions (no API calls)")
     trn.add_argument("--alpha", type=float, default=20.0, help="Ridge shrinkage for rolling team ratings")
-    trn.add_argument("--shrink-plays", type=int, default=75, help="Plays before a season's own data outweighs last season")
+    trn.add_argument(
+        "--shrink-plays", type=int, default=75, help="Plays before a season's own data outweighs last season"
+    )
     sim = sub.add_parser("simulate", help="Simulate the rest of the season (no API calls)")
     sim.add_argument("--sims", type=int, default=10_000, help="Number of simulated seasons")
     sim.add_argument("--seed", type=int, default=0, help="Random seed (same seed, same results)")
@@ -109,8 +113,13 @@ def main(argv: list[str] | None = None) -> int:
             con = db.connect(settings.db_path)
             try:
                 result = simulate_season(
-                    con, season=settings.current_season, sigma=sigma, team=args.team,
-                    n_sims=args.sims, seed=args.seed, tau=args.tau,
+                    con,
+                    season=settings.current_season,
+                    sigma=sigma,
+                    team=args.team,
+                    n_sims=args.sims,
+                    seed=args.seed,
+                    tau=args.tau,
                 )
                 write_results(con, result, settings.db_path.parent)
             finally:

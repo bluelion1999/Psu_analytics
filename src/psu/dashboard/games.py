@@ -1,4 +1,5 @@
 """Game explorer data: completed games, line score, box score, drives, biggest plays and win probability."""
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,7 @@ REGULATION_SECONDS = 3600
 
 
 def _clock(minutes: pd.Series, seconds: pd.Series) -> pd.Series:
-    return (
-        minutes.fillna(0).astype(int).astype(str) + ":" + seconds.fillna(0).astype(int).astype(str).str.zfill(2)
-    )
+    return minutes.fillna(0).astype(int).astype(str) + ":" + seconds.fillna(0).astype(int).astype(str).str.zfill(2)
 
 
 def game_options(con: duckdb.DuckDBPyConnection, season: int, team: str) -> pd.DataFrame:
@@ -64,7 +63,7 @@ def line_scores(con: duckdb.DuckDBPyConnection, game_id: int) -> pd.DataFrame:
     for team, points, raw in ((away, away_pts, away_lines), (home, home_pts, home_lines)):
         periods = json.loads(raw) if raw else []
         labels = [f"Q{i + 1}" if i < 4 else f"OT{i - 3}" for i in range(len(periods))]
-        rows.append({"team": team, **dict(zip(labels, periods)), "Total": points})
+        rows.append({"team": team, **dict(zip(labels, periods, strict=True)), "Total": points})
     return pd.DataFrame(rows)
 
 
@@ -130,8 +129,10 @@ def win_probability(con: duckdb.DuckDBPyConnection, game_id: int, sigma: float) 
         (4 - plays["period"]) * 900 + plays["clock_minutes"].fillna(0) * 60 + plays["clock_seconds"].fillna(0),
         0,
     )
-    frames = [pd.DataFrame({"seconds_left": [REGULATION_SECONDS], "home_margin": [0]}),
-              pd.DataFrame({"seconds_left": seconds, "home_margin": home_margin})]
+    frames = [
+        pd.DataFrame({"seconds_left": [REGULATION_SECONDS], "home_margin": [0]}),
+        pd.DataFrame({"seconds_left": seconds, "home_margin": home_margin}),
+    ]
     if home_pts is not None and away_pts is not None:
         frames.append(pd.DataFrame({"seconds_left": [0], "home_margin": [home_pts - away_pts]}))
     wp = pd.concat(frames, ignore_index=True).astype(float)

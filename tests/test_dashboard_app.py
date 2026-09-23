@@ -1,9 +1,9 @@
 from pathlib import Path
 
 import pytest
+from conftest import seed_dashboard_db
 from streamlit.testing.v1 import AppTest
 
-from conftest import seed_dashboard_db
 from psu.db import connect
 
 ROOT = Path(__file__).resolve().parents[1]

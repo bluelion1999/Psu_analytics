@@ -1,12 +1,12 @@
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from psu.client import BudgetExceeded, CachedClient, cache_key
 
-T0 = datetime(2026, 9, 22, 12, tzinfo=timezone.utc)
+T0 = datetime(2026, 9, 22, 12, tzinfo=UTC)
 
 
 class Clock:
@@ -30,9 +30,7 @@ class Recorder:
 
 
 def make_client(tmp_path, fetch, clock, **kw):
-    return CachedClient(
-        tmp_path, fetch, now=lambda: clock.now, monotonic=lambda: clock.mono, sleep=clock.sleep, **kw
-    )
+    return CachedClient(tmp_path, fetch, now=lambda: clock.now, monotonic=lambda: clock.mono, sleep=clock.sleep, **kw)
 
 
 def test_cache_key_is_sorted_and_skips_none():

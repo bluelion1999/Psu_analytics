@@ -3,6 +3,7 @@
 Adds the rush/pass class, success, explosive, turnover and garbage-time flags,
 plus game context (score state, quarter, venue) used by metrics and adjustment.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,27 +12,67 @@ import numpy as np
 import pandas as pd
 
 RUSH_TYPES = frozenset({"Rush", "Rushing Touchdown"})
-PASS_TYPES = frozenset({
-    "Pass Reception", "Pass Incompletion", "Passing Touchdown", "Sack",
-    "Pass Interception Return", "Interception", "Interception Return Touchdown",
-    "Pass Completion", "Pass",
-})
-FUMBLE_TYPES = frozenset({
-    "Fumble Recovery (Own)", "Fumble Recovery (Opponent)", "Fumble Return Touchdown", "Fumble",
-})
+PASS_TYPES = frozenset(
+    {
+        "Pass Reception",
+        "Pass Incompletion",
+        "Passing Touchdown",
+        "Sack",
+        "Pass Interception Return",
+        "Interception",
+        "Interception Return Touchdown",
+        "Pass Completion",
+        "Pass",
+    }
+)
+FUMBLE_TYPES = frozenset(
+    {
+        "Fumble Recovery (Own)",
+        "Fumble Recovery (Opponent)",
+        "Fumble Return Touchdown",
+        "Fumble",
+    }
+)
 SCRIMMAGE_TYPES = RUSH_TYPES | PASS_TYPES | FUMBLE_TYPES | {"Safety"}
-TURNOVER_TYPES = frozenset({
-    "Pass Interception Return", "Interception", "Interception Return Touchdown",
-    "Fumble Recovery (Opponent)", "Fumble Return Touchdown",
-})
+TURNOVER_TYPES = frozenset(
+    {
+        "Pass Interception Return",
+        "Interception",
+        "Interception Return Touchdown",
+        "Fumble Recovery (Opponent)",
+        "Fumble Return Touchdown",
+    }
+)
 OFFENSIVE_TD_TYPES = frozenset({"Rushing Touchdown", "Passing Touchdown"})
 SCORE_STATES = ("down 9+", "down 1-8", "tied", "up 1-8", "up 9+")
 
 ENRICHED_COLUMNS = [
-    "id", "game_id", "drive_id", "season", "week", "season_type",
-    "offense", "offense_conference", "defense", "defense_conference",
-    "period", "quarter", "down", "distance", "yards_to_goal", "yards_gained", "play_type", "ppa",
-    "play_class", "success", "explosive", "turnover", "margin", "score_state", "garbage", "venue",
+    "id",
+    "game_id",
+    "drive_id",
+    "season",
+    "week",
+    "season_type",
+    "offense",
+    "offense_conference",
+    "defense",
+    "defense_conference",
+    "period",
+    "quarter",
+    "down",
+    "distance",
+    "yards_to_goal",
+    "yards_gained",
+    "play_type",
+    "ppa",
+    "play_class",
+    "success",
+    "explosive",
+    "turnover",
+    "margin",
+    "score_state",
+    "garbage",
+    "venue",
 ]
 
 
@@ -79,15 +120,15 @@ def is_success(plays: pd.DataFrame) -> pd.Series:
 
 
 def is_garbage(period: pd.Series, margin: pd.Series, garbage: GarbageTime) -> pd.Series:
-    limits = pd.to_numeric(
-        period.map({1: garbage.q1, 2: garbage.q2, 3: garbage.q3, 4: garbage.q4}), errors="coerce"
-    )
+    limits = pd.to_numeric(period.map({1: garbage.q1, 2: garbage.q2, 3: garbage.q3, 4: garbage.q4}), errors="coerce")
     # NaN limit (overtime, or a quarter with no threshold) compares False: never garbage time.
     return (margin.abs() > limits).astype(bool)
 
 
 def score_state(margin: pd.Series) -> pd.Series:
-    buckets = np.select([margin <= -9, margin < 0, margin == 0, margin < 9], list(SCORE_STATES[:4]), default=SCORE_STATES[4])
+    buckets = np.select(
+        [margin <= -9, margin < 0, margin == 0, margin < 9], list(SCORE_STATES[:4]), default=SCORE_STATES[4]
+    )
     return pd.Series(buckets, index=margin.index)
 
 
