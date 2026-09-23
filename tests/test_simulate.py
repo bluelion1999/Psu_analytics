@@ -102,3 +102,40 @@ def test_title_game_loss_counts_toward_cfp_losses():
     # 2 losses, so with max_losses=1 no season where B plays in the title game can reach the playoff.
     assert r.p_title_game > 0
     assert r.p_cfp <= 1.0 - r.p_title_game + 1e-9
+
+
+def _with_title_game(completed=False, home_points=None, away_points=None):
+    """synthetic_league() plus a week-6 Big Ten title game row, id 10, A vs B."""
+    games, predictions = synthetic_league()
+    title = pd.DataFrame([{
+        "id": 10, "season": 2026, "week": 6, "season_type": "regular",
+        "start_date": pd.Timestamp(2026, 10, 6), "completed": completed,
+        "home_team": "A", "away_team": "B", "home_conference": "Big Ten", "away_conference": "Big Ten",
+        "home_points": home_points, "away_points": away_points, "notes": "Big Ten Championship",
+    }])
+    games = pd.concat([games, title], ignore_index=True)
+    games[["home_points", "away_points"]] = games[["home_points", "away_points"]].astype("Int64")
+    return games, predictions
+
+
+def test_scheduled_title_game_is_excluded_from_the_regular_season():
+    games, predictions = _with_title_game()
+    r = run(games=games, upcoming=predictions)
+    assert list(r.win_totals["wins"]) == [0, 1, 2, 3, 4, 5]  # still 5 regular games for A
+    conf = r.conference.set_index("team")
+    assert conf.loc["A", "p_title_game"] == 1.0 and conf.loc["B", "p_title_game"] == 1.0
+    assert conf.loc["C", "p_title_game"] == 0.0 and conf.loc["D", "p_title_game"] == 0.0
+    baseline = run()
+    assert conf.loc["A", "mean_conf_wins"] == pytest.approx(
+        baseline.conference.set_index("team").loc["A", "mean_conf_wins"]
+    )
+
+
+def test_completed_title_game_fixes_the_champion():
+    games, predictions = _with_title_game(completed=True, home_points=10, away_points=20)
+    conf = run(games=games, upcoming=predictions).conference.set_index("team")
+    assert conf.loc["B", "p_conf_champ"] == 1.0 and conf.loc["A", "p_conf_champ"] == 0.0
+    r_a = run(team="A", games=games, upcoming=predictions)
+    assert r_a.p_title_game == 1.0 and r_a.p_conf_champ == 0.0
+
+

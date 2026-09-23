@@ -64,13 +64,24 @@ def run_simulation(
         raise ValueError("n_sims must be at least 1")
     rng = np.random.default_rng(seed)
     season_games = games[games["season"] == season]
-    regular = season_games[season_games["season_type"] == "regular"]
+    regular_all = season_games[season_games["season_type"] == "regular"]
     members = sorted(
-        set(regular.loc[regular["home_conference"] == conference, "home_team"])
-        | set(regular.loc[regular["away_conference"] == conference, "away_team"])
+        set(regular_all.loc[regular_all["home_conference"] == conference, "home_team"])
+        | set(regular_all.loc[regular_all["away_conference"] == conference, "away_team"])
     )
     if len(members) < 2:
         raise ValueError(f"fewer than two {conference} teams in {season}")
+
+    notes = regular_all["notes"] if "notes" in regular_all.columns else pd.Series(index=regular_all.index, dtype=object)
+    notes = notes.fillna("").astype(str)
+    is_title = (
+        regular_all["home_team"].isin(members)
+        & regular_all["away_team"].isin(members)
+        & notes.str.contains(f"{conference} Championship", case=False, regex=False)
+    )
+    title_rows = regular_all[is_title]
+    title_match = title_rows.iloc[0] if len(title_rows) else None
+    regular = regular_all[~is_title]
 
     is_conf = regular["home_team"].isin(members) & regular["away_team"].isin(members)
     is_team = (regular["home_team"] == team) | (regular["away_team"] == team)
@@ -129,23 +140,39 @@ def run_simulation(
     np.add.at(h2h_games, (ch, ca), 1)
     np.add.at(h2h_games, (ca, ch), 1)
 
-    first = np.empty(n_sims, dtype=int)
-    second = np.empty(n_sims, dtype=int)
-    for i in range(n_sims):
-        hw = conf_home_win[i]
-        h2h_wins = np.zeros((n_members, n_members), dtype=int)
-        np.add.at(h2h_wins, (ch[hw], ca[hw]), 1)
-        np.add.at(h2h_wins, (ca[~hw], ch[~hw]), 1)
-        first[i], second[i] = top_two(conf_wins[i], conf_games, h2h_wins, h2h_games, rng)
+    if title_match is not None:
+        # A real conference title game: the pair (and, if it's already been played, the champion) is fixed.
+        first = np.full(n_sims, m_index[title_match["home_team"]], dtype=int)
+        second = np.full(n_sims, m_index[title_match["away_team"]], dtype=int)
+    else:
+        first = np.empty(n_sims, dtype=int)
+        second = np.empty(n_sims, dtype=int)
+        for i in range(n_sims):
+            hw = conf_home_win[i]
+            h2h_wins = np.zeros((n_members, n_members), dtype=int)
+            np.add.at(h2h_wins, (ch[hw], ca[hw]), 1)
+            np.add.at(h2h_wins, (ca[~hw], ch[~hw]), 1)
+            first[i], second[i] = top_two(conf_wins[i], conf_games, h2h_wins, h2h_games, rng)
 
-    ratings = fit_ratings(upcoming)
-    member_rating = np.array([ratings.rating.get(t, 0.0) for t in members])
-    member_team = np.array([index[t] for t in members])
-    title_margin = draw_matchups(
-        member_rating[first] - member_rating[second], member_team[first], member_team[second],
-        strengths, sigma=sigma, tau=tau, rng=rng,
-    )
-    champion = np.where(title_margin > 0, first, second)
+    title_completed = title_match is not None and bool(title_match["completed"]) and pd.notna(
+        title_match["home_points"]
+    ) and pd.notna(title_match["away_points"])
+    if title_completed:
+        winner = (
+            m_index[title_match["home_team"]]
+            if title_match["home_points"] > title_match["away_points"]
+            else m_index[title_match["away_team"]]
+        )
+        champion = np.full(n_sims, winner, dtype=int)
+    else:
+        ratings = fit_ratings(upcoming)
+        member_rating = np.array([ratings.rating.get(t, 0.0) for t in members])
+        member_team = np.array([index[t] for t in members])
+        title_margin = draw_matchups(
+            member_rating[first] - member_rating[second], member_team[first], member_team[second],
+            strengths, sigma=sigma, tau=tau, rng=rng,
+        )
+        champion = np.where(title_margin > 0, first, second)
 
     t = m_index.get(team)
     in_title = np.zeros(n_sims, dtype=bool) if t is None else (first == t) | (second == t)
@@ -181,7 +208,7 @@ def run_simulation(
 
 GAME_COLUMNS = (
     "id, season, week, season_type, start_date, completed, home_team, away_team, "
-    "home_conference, away_conference, home_points, away_points"
+    "home_conference, away_conference, home_points, away_points, notes"
 )
 SUMMARY_COLUMNS = [
     "season", "team", "n_sims", "seed", "tau", "as_of",
