@@ -149,3 +149,17 @@ def test_simulate_rejects_too_large_tau(settings, capsys):
     _trained(settings)
     assert cli.main(["simulate", "--tau", "20", "--team", "A"]) == 2
     assert "tau" in capsys.readouterr().err
+
+
+def test_simulate_unknown_team_is_a_usage_error(settings, capsys):
+    import duckdb
+
+    _trained(settings)
+    assert cli.main(["simulate", "--team", "Nobody"]) == 2
+    assert "Nobody" in capsys.readouterr().err
+    con = duckdb.connect(str(settings.db_path), read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    finally:
+        con.close()
+    assert "sim_team_summary" not in tables

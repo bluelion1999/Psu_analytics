@@ -71,6 +71,8 @@ def run_simulation(
     )
     if len(members) < 2:
         raise ValueError(f"fewer than two {conference} teams in {season}")
+    if not ((regular_all["home_team"] == team) | (regular_all["away_team"] == team)).any():
+        raise ValueError(f"{team} has no {season} regular-season games")
 
     notes = regular_all["notes"] if "notes" in regular_all.columns else pd.Series(index=regular_all.index, dtype=object)
     notes = notes.fillna("").astype(str)

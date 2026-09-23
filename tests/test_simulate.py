@@ -150,3 +150,8 @@ def test_finished_season_ratings_use_every_prediction_of_the_season():
     assert r.p_conf_champ > 0.95
 
 
+def test_unknown_team_is_a_value_error():
+    with pytest.raises(ValueError, match="Nobody"):
+        run(team="Nobody")
+
+
