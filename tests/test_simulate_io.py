@@ -35,12 +35,12 @@ def test_simulate_season_from_duckdb_matches_dataframe_run():
     assert from_db.as_of == direct.as_of
 
 
-def test_only_upcoming_rows_of_the_season_are_used():
+def test_load_inputs_returns_every_prediction_of_the_season():
     con = connect(":memory:")
     seed_league_db(con)
     con.execute("UPDATE game_predictions SET split = 'in_sample' WHERE game_id = 5")
-    with pytest.raises(MissingModel):
-        simulate_season(con, season=2026, sigma=16.0, team="A", n_sims=10)
+    _, predictions = load_inputs(con, 2026)
+    assert (predictions["game_id"] == 5).any()
 
 
 def test_write_results_replaces_tables_and_writes_report(tmp_path):

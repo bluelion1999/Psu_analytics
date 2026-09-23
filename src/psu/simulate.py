@@ -48,7 +48,7 @@ def makes_cfp(losses, champion, max_losses: int = 2) -> np.ndarray:
 
 def run_simulation(
     games: pd.DataFrame,
-    upcoming: pd.DataFrame,
+    predictions: pd.DataFrame,
     *,
     season: int,
     sigma: float,
@@ -85,7 +85,7 @@ def run_simulation(
 
     is_conf = regular["home_team"].isin(members) & regular["away_team"].isin(members)
     is_team = (regular["home_team"] == team) | (regular["away_team"] == team)
-    preds = upcoming[["game_id", "pred_margin"]].rename(columns={"game_id": "id"})
+    preds = predictions[["game_id", "pred_margin"]].rename(columns={"game_id": "id"})
     relevant = regular[is_conf | is_team].drop_duplicates("id").merge(preds, on="id", how="left")
     relevant = relevant.sort_values("id").reset_index(drop=True)  # fixed column order: same seed, same draws
 
@@ -165,7 +165,7 @@ def run_simulation(
         )
         champion = np.full(n_sims, winner, dtype=int)
     else:
-        ratings = fit_ratings(upcoming)
+        ratings = fit_ratings(predictions)
         member_rating = np.array([ratings.rating.get(t, 0.0) for t in members])
         member_team = np.array([index[t] for t in members])
         title_margin = draw_matchups(
@@ -221,12 +221,12 @@ def load_inputs(con: duckdb.DuckDBPyConnection, season: int) -> tuple[pd.DataFra
     if "game_predictions" not in tables:
         raise MissingModel("game_predictions table not found; run `psu train` first")
     games = con.execute(f"SELECT {GAME_COLUMNS} FROM games WHERE season = ?", [season]).df()
-    upcoming = con.execute(
+    predictions = con.execute(
         "SELECT game_id, home_team, away_team, neutral_site, pred_margin FROM game_predictions "
-        "WHERE season = ? AND split = 'upcoming'",
+        "WHERE season = ?",
         [season],
     ).df()
-    return games, upcoming
+    return games, predictions
 
 
 def load_sigma(out_dir: Path) -> float:
@@ -247,9 +247,9 @@ def simulate_season(
     tau: float = 5.0,
     cfp_max_losses: int = 2,
 ) -> SimResult:
-    games, upcoming = load_inputs(con, season)
+    games, predictions = load_inputs(con, season)
     return run_simulation(
-        games, upcoming, season=season, sigma=sigma, team=team, n_sims=n_sims, seed=seed, tau=tau,
+        games, predictions, season=season, sigma=sigma, team=team, n_sims=n_sims, seed=seed, tau=tau,
         cfp_max_losses=cfp_max_losses,
     )
 

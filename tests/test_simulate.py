@@ -139,3 +139,14 @@ def test_completed_title_game_fixes_the_champion():
     assert r_a.p_title_game == 1.0 and r_a.p_conf_champ == 0.0
 
 
+def test_finished_season_ratings_use_every_prediction_of_the_season():
+    games, predictions = synthetic_league()
+    games = games.copy()
+    games["completed"] = True
+    todo = games["home_points"].isna()
+    games.loc[todo, "home_points"] = 21  # every remaining game: home team wins 21-14
+    games.loc[todo, "away_points"] = 14
+    r = run(games=games, upcoming=predictions, sigma=1.0, tau=0.1)
+    assert r.p_conf_champ > 0.95
+
+
