@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from psu.config import TEAM
-from psu.dashboard.ui import load_or_note, season_picker
+from psu.dashboard.ui import fmt, load_or_note, season_picker
 
 season = season_picker()
 st.title("Predictions")
@@ -18,16 +18,15 @@ if games is not None:
         st.dataframe(pd.DataFrame({
             "Week": games["week"], "Date": pd.to_datetime(games["start_date"]).dt.date,
             "Opponent": games["opponent"], "Venue": games["venue"].str.title(),
-            "Model": games["model_margin"], "Win prob": games["win_prob"] * 100, "Vegas": games["vegas_margin"],
-        }), hide_index=True, column_config={
-            "Model": st.column_config.NumberColumn(format="%+.1f"),
-            "Vegas": st.column_config.NumberColumn(format="%+.1f"),
-            "Win prob": st.column_config.NumberColumn(format="%.0f%%"),
-        })
+            "Model": fmt(games["model_margin"], "+.1f"), "Win prob": fmt(games["win_prob"], ".0%"),
+            "Vegas": fmt(games["vegas_margin"], "+.1f"),
+        }), hide_index=True)
 
 st.subheader("Season simulation")
 summary = load_or_note("predictions.sim_summary", TEAM)
-if summary is not None:
+if summary is not None and int(summary["season"]) != season:
+    st.info(f"The season simulation covers {int(summary['season'])} only; pick it in the sidebar.")
+elif summary is not None:
     tiles = st.columns(5)
     tiles[0].metric("Mean wins", f"{summary['mean_wins']:.1f}")
     for tile, (label, key) in zip(tiles[1:], (
@@ -67,4 +66,11 @@ with st.expander("Next week's FBS games"):
         if slate.empty:
             st.info(f"No upcoming games in {season}.")
         else:
-            st.dataframe(slate, hide_index=True)
+            st.dataframe(pd.DataFrame({
+                "Week": slate["week"], "Date": pd.to_datetime(slate["start_date"]).dt.date,
+                "Away": slate["away_team"], "Home": slate["home_team"],
+                "Neutral": slate["neutral_site"].map({True: "Neutral", False: ""}),
+                "Model (home)": fmt(slate["pred_margin"], "+.1f"),
+                "Win prob (home)": fmt(slate["home_win_prob"], ".0%"),
+                "Vegas (home)": fmt(slate["vegas_margin"], "+.1f"),
+            }), hide_index=True)

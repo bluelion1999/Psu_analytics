@@ -3,7 +3,8 @@ import pandas as pd
 import streamlit as st
 
 from psu.config import TEAM
-from psu.dashboard.ui import load, load_or_note, load_or_stop, season_picker
+from psu.dashboard.common import MissingData
+from psu.dashboard.ui import fmt, load, load_or_note, load_or_stop, season_picker
 
 season = season_picker()
 st.title(f"{TEAM} {season}")
@@ -27,15 +28,11 @@ table = pd.DataFrame({
     "Opponent": schedule["opponent"],
     "Venue": schedule["venue"].str.title(),
     "Result": (schedule["result"].fillna("") + " " + score).where(schedule["completed"], ""),
-    "Vegas": schedule["vegas_margin"],
-    "Model": schedule["model_margin"],
-    "Win prob": schedule["win_prob"] * 100,
+    "Vegas": fmt(schedule["vegas_margin"], "+.1f"),
+    "Model": fmt(schedule["model_margin"], "+.1f"),
+    "Win prob": fmt(schedule["win_prob"], ".0%"),
 })
-st.dataframe(table, hide_index=True, column_config={
-    "Vegas": st.column_config.NumberColumn(format="%+.1f"),
-    "Model": st.column_config.NumberColumn(format="%+.1f"),
-    "Win prob": st.column_config.NumberColumn(format="%.0f%%"),
-})
+st.dataframe(table, hide_index=True)
 st.caption(
     f"Lines are from {TEAM}'s side: +7 means {TEAM} is favoured by 7. "
     "For games already played the model line is in-sample, so it flatters the model."
@@ -44,10 +41,15 @@ st.caption(
 st.subheader("Key metrics")
 metrics = load_or_note("overview.metric_comparison", season, TEAM)
 if metrics is not None:
-    conference = load("common.team_conference", season, TEAM) or "Conference"
+    try:
+        conference = load("common.team_conference", season, TEAM) or "Conference"
+    except MissingData:
+        conference = "Conference"
     shown = metrics.drop(columns="higher_is_better").rename(columns={
         "metric": "Metric", "value": TEAM, "conference_avg": f"{conference} avg", "national_avg": "FBS avg",
     })
-    number = st.column_config.NumberColumn(format="%.3f")
-    st.dataframe(shown, hide_index=True, column_config={c: number for c in shown.columns if c != "Metric"})
+    for column in shown.columns:
+        if column != "Metric":
+            shown[column] = fmt(shown[column], ".3f")
+    st.dataframe(shown, hide_index=True)
     st.caption("For defense EPA/play and success rate, lower is better. Blank means no plays yet this season.")

@@ -5,6 +5,7 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import streamlit as st
 
 from psu.dashboard.common import MissingData, db_path, read
@@ -37,6 +38,11 @@ def load_or_note(name: str, *args: Any) -> Any:
         return None
 
 
+def fmt(series: pd.Series, spec: str) -> pd.Series:
+    """Format a numeric series, blanking missing values instead of showing "None"."""
+    return series.map(lambda v: "" if pd.isna(v) else format(v, spec))
+
+
 def season_picker() -> int:
     if st.sidebar.button("Refresh data"):
         st.cache_data.clear()
@@ -44,4 +50,9 @@ def season_picker() -> int:
     if not options:
         st.info("No games loaded yet; run `psu ingest` first")
         st.stop()
-    return st.sidebar.selectbox("Season", options, index=0)
+    saved = st.session_state.get("_season")
+    if saved not in options:
+        saved = options[0]
+    season = st.sidebar.selectbox("Season", options, index=options.index(saved))
+    st.session_state["_season"] = season
+    return season

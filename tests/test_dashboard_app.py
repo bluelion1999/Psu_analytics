@@ -99,6 +99,31 @@ def test_refresh_button_clears_cache(tmp_path, monkeypatch):
     assert not at.exception
 
 
+def test_predictions_scopes_simulation_to_its_own_season(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+    at = _run("predictions")  # default season 2027; the seeded simulation covers 2026 only
+    assert not at.exception, at.exception
+    assert any("covers 2026" in i.value for i in at.info)
+    assert not at.metric
+
+
+def test_season_picker_keeps_the_selection_across_pages(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+    at = AppTest.from_file(str(ROOT / "app" / "views" / "overview.py"), default_timeout=60)
+    at.session_state["_season"] = 2025
+    at.run()
+    assert at.sidebar.selectbox[0].value == 2025
+
+
+def test_vegas_cell_is_blank_for_a_game_without_a_line(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch, with_model=False)
+    at = _run("overview", season=2026)
+    assert not at.exception, at.exception
+    table = at.dataframe[0].value
+    assert (table["Vegas"] == "").all()
+    assert not table.astype(str).apply(lambda c: c.str.contains("None")).any().any()
+
+
 @pytest.mark.skipif(not REAL_DB.exists(), reason="needs data/psu.duckdb")
 @pytest.mark.parametrize("view", VIEWS)
 def test_every_page_renders_on_the_real_database(monkeypatch, view):

@@ -4,7 +4,7 @@ import streamlit as st
 
 from psu.config import TEAM
 from psu.dashboard.common import db_path
-from psu.dashboard.ui import load, load_or_note, load_or_stop, season_picker
+from psu.dashboard.ui import load_or_note, load_or_stop, season_picker
 from psu.simulate import MissingModel, load_sigma
 
 season = season_picker()
@@ -17,7 +17,7 @@ if options.empty:
 labels = dict(zip(options["game_id"].tolist(), options["label"].tolist()))
 game_id = st.selectbox("Game", list(labels), format_func=labels.get)
 
-scores = load("games.line_scores", game_id)
+scores = load_or_stop("games.line_scores", game_id)
 st.dataframe(scores, hide_index=True)
 home = scores["team"].iloc[-1]
 
