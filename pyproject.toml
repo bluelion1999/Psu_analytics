@@ -14,6 +14,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "scikit-learn>=1.5",
     "scipy>=1.11",
+    "streamlit>=1.40",
     "xgboost>=2.0",
 ]
 
