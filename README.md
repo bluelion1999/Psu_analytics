@@ -138,3 +138,45 @@ The `split` column in `game_predictions` says which rows are genuine pregame pre
 - `no_prior`: the first season, with no prior-season ratings. Never trained on.
 
 For honest pregame numbers on past games, use the backtest report.
+
+## Phase 4: Season simulator
+
+```
+.venv\Scripts\psu simulate                 # 10,000 seasons, seed 0, tau 5
+.venv\Scripts\psu simulate --sims 50000 --seed 1 --tau 4
+```
+
+Run `psu train` first. The simulator reads `game_predictions` and the model's sigma from
+`data/reports/game_model.json`. It makes no API calls, and a full run takes about 3 seconds.
+
+How it works:
+- Games already played use their actual results. Every remaining Big Ten game, and every remaining
+  Penn State game, is simulated from the model's predicted margin.
+- In each simulated season, every team gets one season-long strength draw (spread `--tau` points).
+  A team that runs hot does so in all its games. Game noise is sized so that each game still has the
+  model's win probability.
+- Big Ten standings: conference win %, then head-to-head among the tied teams (only if they all
+  played each other), then a coin flip. The top two meet at a neutral site, rated from power ratings
+  fitted to the model's predictions.
+- The conference title game is identified by its `notes` field (containing "Big Ten Championship") and
+  excluded from the regular season and standings; if it's already been played, its actual teams and
+  winner are used, otherwise its two teams are fixed and the winner is simulated.
+- CFP (rough): in if Big Ten champion, or 2 or fewer losses, counting a title-game loss.
+- Win totals are regular season only. Ratings for the title game are fitted on every prediction of the
+  season, not just the games left to play, so they stay sharp late in the season.
+
+Outputs (replaced on each run): `sim_team_summary`, `sim_win_totals` and `sim_conference`, plus
+`data/reports/season_sim.md`.
+
+Results through 2026-09-20 (Penn State 3-0):
+
+| Mean wins | P(10+ wins) | P(title game) | P(Big Ten champ) | P(CFP) |
+|---|---|---|---|---|
+| 9.47 | 51.7% | 29.2% | 10.7% | 48.0% |
+
+The most likely finishes are 10-2 (24.7%) and 9-3 (23.1%). Ohio State is the Big Ten favourite
+(34.2%), ahead of Oregon (18.9%), Indiana (12.7%) and Penn State (10.7%).
+
+Choosing tau: team-level residuals from 2024 and 2025 imply a tau of about 3.4 to 3.9. Those
+predictions are in-sample, so that understates it, and the default is 5. The headline odds barely
+move with tau: from tau 3 to 7, P(10+ wins) goes from 51% to 53% and P(CFP) from 46% to 51%.

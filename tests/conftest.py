@@ -1,4 +1,5 @@
 """Shared test doubles. FakeCFBD fabricates small, consistent CFBD payloads from request params."""
+import pandas as pd
 import pytest
 
 
@@ -145,3 +146,54 @@ def synthetic_features(seed=0, games_per_season=240):
                 **x,
             })
     return pd.DataFrame(rows)
+
+
+def synthetic_league():
+    """A 2026 four-team 'Big Ten' (A-D), an outsider X ('Other') and an FCS team F.
+
+    Played: A beat B 30-10 (conference) and X beat C 24-14 (non-conference), both on 2026-09-01. Still to play:
+    the other five conference games, A-X, and A-F. Predictions cover every remaining game except A-F (FCS).
+    Returns (games, predictions) shaped like the `games` table and `game_predictions` rows.
+    """
+    rows = [
+        # id, week, home, away, home_conf, away_conf, completed, home_pts, away_pts, pred_margin, notes
+        (1, 1, "A", "B", "Big Ten", "Big Ten", True, 30, 10, None, None),
+        (2, 1, "X", "C", "Other", "Big Ten", True, 24, 14, None, None),
+        (3, 2, "C", "D", "Big Ten", "Big Ten", False, None, None, 0.0, None),
+        (4, 2, "A", "X", "Big Ten", "Other", False, None, None, 20.0, None),
+        (5, 3, "B", "C", "Big Ten", "Big Ten", False, None, None, 2.0, None),
+        (6, 3, "D", "A", "Big Ten", "Big Ten", False, None, None, -20.0, None),
+        (7, 4, "A", "C", "Big Ten", "Big Ten", False, None, None, 20.0, None),
+        (8, 4, "B", "D", "Big Ten", "Big Ten", False, None, None, -1.0, None),
+        (9, 5, "A", "F", "Big Ten", "FCS", False, None, None, None, None),
+    ]
+    games = pd.DataFrame([
+        {
+            "id": gid, "season": 2026, "week": week, "season_type": "regular",
+            "start_date": pd.Timestamp(2026, 9, 1) + pd.Timedelta(days=7 * (week - 1)),
+            "completed": done, "home_team": home, "away_team": away,
+            "home_conference": home_conf, "away_conference": away_conf,
+            "home_points": home_pts, "away_points": away_pts, "notes": notes,
+        }
+        for gid, week, home, away, home_conf, away_conf, done, home_pts, away_pts, _, notes in rows
+    ])
+    games[["home_points", "away_points"]] = games[["home_points", "away_points"]].astype("Int64")
+    predictions = pd.DataFrame([
+        {"game_id": gid, "home_team": home, "away_team": away, "neutral_site": False, "pred_margin": pred}
+        for gid, _, home, away, _, _, done, _, _, pred, _ in rows
+        if not done and pred is not None
+    ])
+    return games, predictions
+
+
+def seed_league_db(con):
+    """Load synthetic_league() into a psu.db connection: rows into `games`, plus a `game_predictions` table."""
+    from psu.db import SPECS, upsert
+
+    games, predictions = synthetic_league()
+    upsert(con, SPECS["games"], games)  # creates the declared `games` table (connect() does not)
+    con.register("_preds", predictions.assign(season=2026, split="upcoming"))
+    try:
+        con.execute("CREATE OR REPLACE TABLE game_predictions AS SELECT * FROM _preds")
+    finally:
+        con.unregister("_preds")

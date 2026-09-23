@@ -107,3 +107,59 @@ def test_train_with_too_few_seasons_is_a_clean_error(settings, capsys, monkeypat
     monkeypatch.setattr(cli, "load_features", lambda con, **kw: few[few["season"] >= 2024])
     assert cli.main(["train"]) == 2
     assert "3 complete seasons" in capsys.readouterr().err
+
+
+def _trained(settings):
+    from conftest import seed_league_db
+    from psu import db
+
+    reports = settings.db_path.parent / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "game_model.json").write_text('{"sigma": 16.0}', encoding="utf-8")
+    con = db.connect(settings.db_path)
+    try:
+        seed_league_db(con)
+    finally:
+        con.close()
+
+
+def test_simulate_requires_trained_model(settings, capsys):
+    assert cli.main(["simulate"]) == 2
+    assert "psu train" in capsys.readouterr().err
+    assert not settings.db_path.exists()
+
+
+def test_simulate_writes_tables_and_prints_summary(settings, capsys):
+    import duckdb
+
+    _trained(settings)
+    assert cli.main(["simulate", "--sims", "200", "--team", "A"]) == 0
+    out = capsys.readouterr().out
+    assert "P(10+ wins)" in out and "Season simulation: A 2026" in out
+    con = duckdb.connect(str(settings.db_path), read_only=True)
+    try:
+        assert con.execute("SELECT n_sims FROM sim_team_summary").fetchone()[0] == 200
+        assert con.execute("SELECT count(*) FROM sim_conference").fetchone()[0] == 4
+    finally:
+        con.close()
+    assert (settings.db_path.parent / "reports" / "season_sim.md").exists()
+
+
+def test_simulate_rejects_too_large_tau(settings, capsys):
+    _trained(settings)
+    assert cli.main(["simulate", "--tau", "20", "--team", "A"]) == 2
+    assert "tau" in capsys.readouterr().err
+
+
+def test_simulate_unknown_team_is_a_usage_error(settings, capsys):
+    import duckdb
+
+    _trained(settings)
+    assert cli.main(["simulate", "--team", "Nobody"]) == 2
+    assert "Nobody" in capsys.readouterr().err
+    con = duckdb.connect(str(settings.db_path), read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    finally:
+        con.close()
+    assert "sim_team_summary" not in tables
