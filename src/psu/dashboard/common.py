@@ -47,6 +47,8 @@ def read(fn: Callable[..., Any], *args: Any, path: Path | None = None) -> Any:
         return fn(con, *args)
     except duckdb.InvalidInputException as e:
         raise MissingData(f"The dashboard only reads the database: {e}") from e
+    except duckdb.CatalogException as e:
+        raise MissingData(f"The database schema is out of date ({e}); run `psu build` to update it") from e
     finally:
         con.close()
 

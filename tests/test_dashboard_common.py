@@ -85,3 +85,10 @@ def test_read_busy_database_is_missing_data(tmp_path):
             read(lambda c: 1, path=path)
     finally:
         writer.close()
+
+
+def test_read_schema_mismatch_is_missing_data(tmp_path):
+    path = tmp_path / "psu.duckdb"
+    duckdb.connect(str(path)).close()  # an older build without the table this reader expects
+    with pytest.raises(MissingData, match="psu build"):
+        read(lambda c: c.execute("SELECT * FROM team_havoc").fetchall(), path=path)
