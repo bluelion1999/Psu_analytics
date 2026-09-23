@@ -1,12 +1,16 @@
 """Season simulator: Monte Carlo over the rest of the current season using the Phase 3 game model."""
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
+import duckdb
 import numpy as np
 import pandas as pd
 
+from psu.build import _write
 from psu.config import TEAM
 from psu.sim.ratings import fit_ratings
 from psu.sim.season import draw_margins, draw_matchups, draw_strengths
@@ -173,3 +177,107 @@ def run_simulation(
             "p_conf_champ": np.bincount(champion, minlength=n_members) / n_sims,
         }),
     )
+
+
+GAME_COLUMNS = (
+    "id, season, week, season_type, start_date, completed, home_team, away_team, "
+    "home_conference, away_conference, home_points, away_points"
+)
+SUMMARY_COLUMNS = [
+    "season", "team", "n_sims", "seed", "tau", "as_of",
+    "mean_wins", "p_10_plus", "p_title_game", "p_conf_champ", "p_cfp",
+]
+
+
+def load_inputs(con: duckdb.DuckDBPyConnection, season: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    tables = set(con.execute("SELECT table_name FROM information_schema.tables").df()["table_name"])
+    if "game_predictions" not in tables:
+        raise MissingModel("game_predictions table not found; run `psu train` first")
+    games = con.execute(f"SELECT {GAME_COLUMNS} FROM games WHERE season = ?", [season]).df()
+    upcoming = con.execute(
+        "SELECT game_id, home_team, away_team, neutral_site, pred_margin FROM game_predictions "
+        "WHERE season = ? AND split = 'upcoming'",
+        [season],
+    ).df()
+    return games, upcoming
+
+
+def load_sigma(out_dir: Path) -> float:
+    path = Path(out_dir) / "reports" / "game_model.json"
+    if not path.exists():
+        raise MissingModel(f"{path} not found; run `psu train` first")
+    return float(json.loads(path.read_text(encoding="utf-8"))["sigma"])
+
+
+def simulate_season(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    season: int,
+    sigma: float,
+    team: str = TEAM,
+    n_sims: int = 10_000,
+    seed: int = 0,
+    tau: float = 5.0,
+    cfp_max_losses: int = 2,
+) -> SimResult:
+    games, upcoming = load_inputs(con, season)
+    return run_simulation(
+        games, upcoming, season=season, sigma=sigma, team=team, n_sims=n_sims, seed=seed, tau=tau,
+        cfp_max_losses=cfp_max_losses,
+    )
+
+
+def report_markdown(result: SimResult) -> str:
+    as_of = "no games played yet" if result.as_of is None else f"results through {result.as_of:%Y-%m-%d}"
+    lines = [
+        f"# Season simulation: {result.team} {result.season}",
+        "",
+        f"{result.n_sims:,} simulated seasons (seed {result.seed}, tau {result.tau:g}), {as_of}.",
+        "",
+        "| Mean wins | P(10+ wins) | P(title game) | P(Big Ten champ) | P(CFP) |",
+        "|---|---|---|---|---|",
+        f"| {result.mean_wins:.2f} | {result.p_10_plus:.1%} | {result.p_title_game:.1%} | "
+        f"{result.p_conf_champ:.1%} | {result.p_cfp:.1%} |",
+        "",
+        "## Regular-season wins",
+        "",
+        "| Wins | Probability |",
+        "|---|---|",
+    ]
+    lines += [f"| {w} | {p:.1%} |" for w, p in zip(result.win_totals["wins"], result.win_totals["prob"])]
+    lines += [
+        "",
+        "## Big Ten title race",
+        "",
+        "| Team | Mean conf wins | P(title game) | P(champ) |",
+        "|---|---|---|---|",
+    ]
+    ranked = result.conference.sort_values(["p_conf_champ", "p_title_game"], ascending=False)
+    lines += [
+        f"| {r.team} | {r.mean_conf_wins:.2f} | {r.p_title_game:.1%} | {r.p_conf_champ:.1%} |"
+        for r in ranked.itertuples()
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def write_results(con: duckdb.DuckDBPyConnection, result: SimResult, out_dir: Path) -> None:
+    summary = pd.DataFrame([{
+        "season": result.season, "team": result.team, "n_sims": result.n_sims, "seed": result.seed,
+        "tau": result.tau, "as_of": pd.NaT if result.as_of is None else result.as_of, "mean_wins": result.mean_wins,
+        "p_10_plus": result.p_10_plus, "p_title_game": result.p_title_game,
+        "p_conf_champ": result.p_conf_champ, "p_cfp": result.p_cfp,
+    }])[SUMMARY_COLUMNS]
+    _write(con, "sim_team_summary", summary)
+    _write(
+        con, "sim_win_totals",
+        result.win_totals.assign(season=result.season, team=result.team)[["season", "team", "wins", "prob"]],
+    )
+    _write(
+        con, "sim_conference",
+        result.conference.assign(season=result.season)[
+            ["season", "team", "mean_conf_wins", "p_title_game", "p_conf_champ"]
+        ],
+    )
+    reports = Path(out_dir) / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "season_sim.md").write_text(report_markdown(result), encoding="utf-8")
