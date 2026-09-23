@@ -1,4 +1,4 @@
-"""Command-line entry point: `psu ingest` and `psu status`."""
+"""Command-line entry point: `psu ingest`, `psu status`, `psu build` and `psu train`."""
 from __future__ import annotations
 
 import argparse

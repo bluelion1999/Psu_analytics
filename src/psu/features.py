@@ -64,8 +64,8 @@ def rolling_ratings(
     enriched: pd.DataFrame,
     games: pd.DataFrame,
     *,
-    alpha: float = 50.0,
-    shrink_plays: int = 300,
+    alpha: float,
+    shrink_plays: int,
 ) -> pd.DataFrame:
     """Ratings for each team as of the start of each slate, blended with last season's final ratings."""
     slates = slate_index(games)
@@ -111,8 +111,8 @@ def game_features(
     sp: pd.DataFrame,
     talent: pd.DataFrame,
     *,
-    alpha: float = 50.0,
-    shrink_plays: int = 300,
+    alpha: float,
+    shrink_plays: int,
 ) -> pd.DataFrame:
     """One row per FBS-vs-FBS game: pregame home-minus-away features, the Vegas margin, and the result."""
     ratings = rolling_ratings(enriched, games, alpha=alpha, shrink_plays=shrink_plays)
