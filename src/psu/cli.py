@@ -160,6 +160,14 @@ def cmd_simulate(args: argparse.Namespace, settings: config.Settings) -> int:
     return _simulate(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)[0]
 
 
+def _db_error(e: duckdb.IOException, settings: config.Settings) -> int:
+    if "lock" in str(e).lower():
+        print(f"error: {settings.db_path} is in use by another process; close it and retry ({e})", file=sys.stderr)
+    else:
+        print(f"error: cannot open or write {settings.db_path}: {e}", file=sys.stderr)
+    return 2
+
+
 def _step(name: str) -> None:
     print(f"== {name} ==", flush=True)
 
@@ -173,24 +181,31 @@ def cmd_refresh(args: argparse.Namespace, settings: config.Settings) -> int:
     """ingest (current season) -> build -> train -> simulate, stopping at the first failure."""
     start = time.monotonic()
     api_calls = 0
-    if not args.skip_ingest:
-        _step("ingest")
-        code, ingested = _ingest(settings, [settings.current_season], args.max_calls)
+    step = "ingest"
+    try:
+        if not args.skip_ingest:
+            _step(step)
+            code, ingested = _ingest(settings, [settings.current_season], args.max_calls)
+            if code:
+                return _stopped(step, code)
+            api_calls = ingested.api_calls
+        step = "build"
+        _step(step)
+        code = cmd_build(argparse.Namespace(garbage=config.GARBAGE, alpha=config.BUILD_ALPHA), settings)
         if code:
-            return _stopped("ingest", code)
-        api_calls = ingested.api_calls
-    _step("build")
-    code = cmd_build(argparse.Namespace(garbage=config.GARBAGE, alpha=config.BUILD_ALPHA), settings)
-    if code:
-        return _stopped("build", code)
-    _step("train")
-    code = cmd_train(argparse.Namespace(alpha=config.TRAIN_ALPHA, shrink_plays=config.SHRINK_PLAYS), settings)
-    if code:
-        return _stopped("train", code)
-    _step("simulate")
-    code, sim = _simulate(settings, team=config.TEAM, n_sims=args.sims, seed=args.seed, tau=config.SIM_TAU)
-    if code:
-        return _stopped("simulate", code)
+            return _stopped(step, code)
+        step = "train"
+        _step(step)
+        code = cmd_train(argparse.Namespace(alpha=config.TRAIN_ALPHA, shrink_plays=config.SHRINK_PLAYS), settings)
+        if code:
+            return _stopped(step, code)
+        step = "simulate"
+        _step(step)
+        code, sim = _simulate(settings, team=config.TEAM, n_sims=args.sims, seed=args.seed, tau=config.SIM_TAU)
+        if code:
+            return _stopped(step, code)
+    except duckdb.IOException as e:
+        return _stopped(step, _db_error(e, settings))
     elapsed = time.monotonic() - start
     print(f"refresh ok in {elapsed:.0f}s: {api_calls} API calls, {sim.team} mean wins {sim.mean_wins:.2f}")
     return 0
@@ -246,8 +261,4 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return HANDLERS[args.command](args, settings)
     except duckdb.IOException as e:
-        print(
-            f"error: {settings.db_path} is in use by another process; close it and retry ({e})",
-            file=sys.stderr,
-        )
-        return 2
+        return _db_error(e, settings)

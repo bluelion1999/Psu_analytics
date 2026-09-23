@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.16,<0.17"]  # pinned: new ruff releases can change format/lint output
 
 [project.scripts]
 psu = "psu.cli:main"

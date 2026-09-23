@@ -282,3 +282,34 @@ def test_refresh_skip_ingest_on_empty_db_stops_at_build(settings, capsys):
     assert cli.main(["refresh", "--skip-ingest"]) == 2
     err = capsys.readouterr().err
     assert "psu ingest" in err and "refresh stopped at build (exit 2)" in err
+
+
+def test_database_error_that_is_not_a_lock_is_not_blamed_on_another_process(settings, capsys, monkeypatch):
+    import duckdb
+
+    from psu import db
+
+    def unreadable(*args, **kwargs):
+        raise duckdb.IOException("Cannot open file: Permission denied")
+
+    monkeypatch.setattr(db, "connect", unreadable)
+    assert cli.main(["build"]) == 2
+    err = capsys.readouterr().err
+    assert "cannot open or write" in err and "Permission denied" in err
+    assert "in use by another process" not in err
+
+
+def test_refresh_database_locked_mid_run_reports_the_step(settings, capsys, monkeypatch):
+    import duckdb
+
+    calls = _stub_steps(monkeypatch)
+
+    def locked_train(args, settings):
+        calls.append(("train",))
+        raise duckdb.IOException("Could not set lock on file: held by PID 1234")
+
+    monkeypatch.setattr(cli, "cmd_train", locked_train)
+    assert cli.main(["refresh"]) == 2
+    assert [c[0] for c in calls] == ["ingest", "build", "train"]
+    err = capsys.readouterr().err
+    assert "in use by another process" in err and "refresh stopped at train (exit 2)" in err
