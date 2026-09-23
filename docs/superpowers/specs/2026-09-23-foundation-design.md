@@ -71,11 +71,20 @@ psu refresh [--skip-ingest] [--max-calls N] [--sims N] [--seed N]
   seconds, and the team's simulated mean wins, for example:
   `refresh ok in 94s: 4 API calls, Penn State mean wins 9.47`.
 - To produce that line, the ingest and simulate handlers expose their results to `cmd_refresh`.
-  Each one splits into an inner function that returns `(code, result)` and a thin `cmd_*` wrapper
-  that prints. The printed output of the standalone commands stays the same.
+  Each one splits into an inner function (`_ingest`, `_simulate`) that does the work, prints the
+  same output as today and returns `(code, result)`. `cmd_ingest` and `cmd_simulate` become thin
+  wrappers around them, so the standalone commands print exactly what they print today.
+- If a step stops the run, `refresh` prints `refresh stopped at <step> (exit <code>)` to stderr.
 
-`refresh` constructs an `argparse.Namespace` per step from its own args and the shared
-defaults, and calls the step's inner function. It does not re-invoke `main()`.
+`refresh` calls `_ingest` and `_simulate` directly, and calls `cmd_build` and `cmd_train` with an
+`argparse.Namespace` built from the shared defaults. It does not re-invoke `main()`.
+
+### Database in use
+
+If DuckDB can't open `data/psu.duckdb` because another process holds it (for example, a second
+`psu` command writing), `main()` catches `duckdb.IOException`, prints
+`error: data/psu.duckdb is in use by another process; close it and retry (<detail>)` and returns 2,
+instead of showing a traceback. This applies to every command.
 
 ## 2. Lint and CI
 
