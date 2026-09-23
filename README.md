@@ -180,3 +180,24 @@ The most likely finishes are 10-2 (24.7%) and 9-3 (23.1%). Ohio State is the Big
 Choosing tau: team-level residuals from 2024 and 2025 imply a tau of about 3.4 to 3.9. Those
 predictions are in-sample, so that understates it, and the default is 5. The headline odds barely
 move with tau: from tau 3 to 7, P(10+ wins) goes from 51% to 53% and P(CFP) from 46% to 51%.
+
+## Phase 5: Dashboard
+
+```
+.venv\Scripts\streamlit run app\streamlit_app.py
+```
+
+The dashboard opens in your browser. It reads `data/psu.duckdb` read-only and makes no API calls. The pages:
+- **Season overview:** record, schedule with Vegas and model lines, and key metrics vs. the Big Ten and FBS.
+- **Efficiency trends:** EPA/play and success rate by season, and game by game (garbage time excluded).
+- **Game explorer:** line score, box score, drive chart, win probability and the biggest plays.
+- **Players:** passing, rushing and receiving tables from box scores, for any team.
+- **Predictions:** upcoming games, the season simulation and next week's FBS slate.
+
+Notes:
+- Results are cached for 10 minutes. Use **Refresh data** in the sidebar after re-running `psu build`,
+  `psu train` or `psu simulate`. If a page says a table is missing, it names the command to run.
+- The win-probability chart is estimated from the score, the time left and the model's pregame line.
+  It isn't a play-level model.
+- Player tables use box-score efficiency. Plays don't name players, so per-player EPA isn't available.
+- Set `PSU_DB_PATH` to point the dashboard at a different database file.
