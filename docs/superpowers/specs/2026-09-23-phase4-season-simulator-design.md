@@ -25,11 +25,11 @@ Constraints: no API calls; full run under one minute; results stored in DuckDB f
 
 ## Inputs (all from DuckDB, read-only)
 
-- `game_predictions`: rows for the current season with `split = 'upcoming'` (remaining games), with `pred_margin` and `neutral_site`.
-- `games`: current-season results (`completed`, points), `conference_game`, `home_conference`, `away_conference`, `season_type`.
+- `game_predictions`: every row for the current season, played or not, with `pred_margin` and `neutral_site`. The ratings used for the title game are fitted on all of them, not just the remaining games, so the fit stays sharp late in the season.
+- `games`: current-season results (`completed`, points), `conference_game`, `home_conference`, `away_conference`, `season_type`, `notes`.
 - `data/reports/game_model.json`: `sigma` (the normal spread of the model's margin errors, ~16.3).
 
-**Big Ten membership** is taken from the current season's `games` (teams whose `home_conference` or `away_conference` is `"Big Ten"`). A **conference game** is a regular-season game with both teams in the Big Ten.
+**Big Ten membership** is taken from the current season's `games` (teams whose `home_conference` or `away_conference` is `"Big Ten"`). A **conference game** is a regular-season game with both teams in the Big Ten, excluding the conference title game itself. The **title game** is identified as a regular-season game between two conference members whose `notes` contains `"<conference> Championship"` (case-insensitive); it is removed before standings, win totals, and head-to-head are computed. If it's present and completed, its actual teams and winner are used every simulation; if present and not yet played, its two teams are fixed and the winner is simulated; if absent, the simulated top two teams meet instead.
 
 ## Components
 

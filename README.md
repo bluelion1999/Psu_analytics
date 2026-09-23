@@ -158,8 +158,12 @@ How it works:
 - Big Ten standings: conference win %, then head-to-head among the tied teams (only if they all
   played each other), then a coin flip. The top two meet at a neutral site, rated from power ratings
   fitted to the model's predictions.
+- The conference title game is identified by its `notes` field (containing "Big Ten Championship") and
+  excluded from the regular season and standings; if it's already been played, its actual teams and
+  winner are used, otherwise its two teams are fixed and the winner is simulated.
 - CFP (rough): in if Big Ten champion, or 2 or fewer losses, counting a title-game loss.
-- Win totals are regular season only.
+- Win totals are regular season only. Ratings for the title game are fitted on every prediction of the
+  season, not just the games left to play, so they stay sharp late in the season.
 
 Outputs (replaced on each run): `sim_team_summary`, `sim_win_totals` and `sim_conference`, plus
 `data/reports/season_sim.md`.
