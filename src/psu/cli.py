@@ -1,10 +1,11 @@
-"""Command-line entry point: `psu ingest`, `psu status`, `psu build`, `psu train` and `psu simulate`."""
+"""Command-line entry point: `psu ingest`, `status`, `build`, `train`, `simulate` and `refresh`."""
 
 from __future__ import annotations
 
 import argparse
 import logging
 import sys
+import time
 from collections.abc import Callable
 
 import duckdb
@@ -159,12 +160,49 @@ def cmd_simulate(args: argparse.Namespace, settings: config.Settings) -> int:
     return _simulate(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)[0]
 
 
+def _step(name: str) -> None:
+    print(f"== {name} ==", flush=True)
+
+
+def _stopped(name: str, code: int) -> int:
+    print(f"refresh stopped at {name} (exit {code})", file=sys.stderr)
+    return code
+
+
+def cmd_refresh(args: argparse.Namespace, settings: config.Settings) -> int:
+    """ingest (current season) -> build -> train -> simulate, stopping at the first failure."""
+    start = time.monotonic()
+    api_calls = 0
+    if not args.skip_ingest:
+        _step("ingest")
+        code, ingested = _ingest(settings, [settings.current_season], args.max_calls)
+        if code:
+            return _stopped("ingest", code)
+        api_calls = ingested.api_calls
+    _step("build")
+    code = cmd_build(argparse.Namespace(garbage=config.GARBAGE, alpha=config.BUILD_ALPHA), settings)
+    if code:
+        return _stopped("build", code)
+    _step("train")
+    code = cmd_train(argparse.Namespace(alpha=config.TRAIN_ALPHA, shrink_plays=config.SHRINK_PLAYS), settings)
+    if code:
+        return _stopped("train", code)
+    _step("simulate")
+    code, sim = _simulate(settings, team=config.TEAM, n_sims=args.sims, seed=args.seed, tau=config.SIM_TAU)
+    if code:
+        return _stopped("simulate", code)
+    elapsed = time.monotonic() - start
+    print(f"refresh ok in {elapsed:.0f}s: {api_calls} API calls, {sim.team} mean wins {sim.mean_wins:.2f}")
+    return 0
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace, config.Settings], int]] = {
     "status": cmd_status,
     "ingest": cmd_ingest,
     "build": cmd_build,
     "train": cmd_train,
     "simulate": cmd_simulate,
+    "refresh": cmd_refresh,
 }
 
 
@@ -193,6 +231,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--tau", type=float, default=config.SIM_TAU, help="Spread (points) of each team's season-long strength draw"
     )
     sim.add_argument("--team", default=config.TEAM, help="Team to report on")
+    ref = sub.add_parser("refresh", help="Run ingest (current season), build, train and simulate in order")
+    ref.add_argument("--skip-ingest", action="store_true", help="Skip ingest (no API calls); rebuild from local data")
+    ref.add_argument("--max-calls", type=int, help="Stop ingest before making more than this many API calls")
+    ref.add_argument("--sims", type=int, default=config.SIM_N, help="Number of simulated seasons")
+    ref.add_argument("--seed", type=int, default=config.SIM_SEED, help="Random seed (same seed, same results)")
     return parser
 
 

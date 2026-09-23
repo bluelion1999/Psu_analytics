@@ -191,3 +191,94 @@ def test_database_in_use_is_a_clean_error(settings, capsys, monkeypatch):
     assert cli.main(["build"]) == 2
     err = capsys.readouterr().err
     assert "in use by another process" in err and "PID 1234" in err
+
+
+def _stub_steps(monkeypatch, codes=None, api_calls=4):
+    """Replace refresh's four steps with recorders; codes maps step -> exit code (default 0)."""
+    from types import SimpleNamespace
+
+    from psu.ingest import IngestResult
+
+    codes = codes or {}
+    calls = []
+
+    def ingest_step(settings, seasons, max_calls):
+        calls.append(("ingest", seasons, max_calls))
+        code = codes.get("ingest", 0)
+        return code, (IngestResult(api_calls=api_calls, row_counts={}) if code == 0 else None)
+
+    def build_step(args, settings):
+        calls.append(("build", args.garbage, args.alpha))
+        return codes.get("build", 0)
+
+    def train_step(args, settings):
+        calls.append(("train", args.alpha, args.shrink_plays))
+        return codes.get("train", 0)
+
+    def simulate_step(settings, *, team, n_sims, seed, tau):
+        calls.append(("simulate", team, n_sims, seed, tau))
+        code = codes.get("simulate", 0)
+        return code, (SimpleNamespace(team=team, mean_wins=9.47) if code == 0 else None)
+
+    monkeypatch.setattr(cli, "_ingest", ingest_step)
+    monkeypatch.setattr(cli, "cmd_build", build_step)
+    monkeypatch.setattr(cli, "cmd_train", train_step)
+    monkeypatch.setattr(cli, "_simulate", simulate_step)
+    return calls
+
+
+def test_refresh_runs_every_step_in_order_with_shared_defaults(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch)
+    assert cli.main(["refresh"]) == 0
+    assert calls == [
+        ("ingest", [2026], None),
+        ("build", config.GARBAGE, config.BUILD_ALPHA),
+        ("train", config.TRAIN_ALPHA, config.SHRINK_PLAYS),
+        ("simulate", config.TEAM, config.SIM_N, config.SIM_SEED, config.SIM_TAU),
+    ]
+    out = capsys.readouterr().out
+    assert out.index("== ingest ==") < out.index("== build ==") < out.index("== train ==") < out.index("== simulate ==")
+    assert "refresh ok in" in out and "4 API calls" in out and "Penn State mean wins 9.47" in out
+
+
+def test_refresh_passes_flags_through(settings, monkeypatch):
+    calls = _stub_steps(monkeypatch)
+    assert cli.main(["refresh", "--max-calls", "7", "--sims", "500", "--seed", "3"]) == 0
+    assert calls[0] == ("ingest", [2026], 7)
+    assert calls[-1] == ("simulate", config.TEAM, 500, 3, config.SIM_TAU)
+
+
+def test_refresh_stops_at_the_first_failing_step(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch, codes={"build": 2})
+    assert cli.main(["refresh"]) == 2
+    assert [c[0] for c in calls] == ["ingest", "build"]
+    captured = capsys.readouterr()
+    assert "refresh stopped at build (exit 2)" in captured.err
+    assert "refresh ok" not in captured.out
+
+
+def test_refresh_budget_stop_returns_3(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch, codes={"ingest": 3})
+    assert cli.main(["refresh"]) == 3
+    assert [c[0] for c in calls] == ["ingest"]
+    assert "refresh stopped at ingest (exit 3)" in capsys.readouterr().err
+
+
+def test_refresh_skip_ingest_never_ingests(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch)
+    assert cli.main(["refresh", "--skip-ingest"]) == 0
+    assert [c[0] for c in calls] == ["build", "train", "simulate"]
+    out = capsys.readouterr().out
+    assert "== ingest ==" not in out and "0 API calls" in out
+
+
+def test_refresh_without_key_stops_at_ingest(settings, capsys):
+    assert cli.main(["refresh"]) == 2
+    err = capsys.readouterr().err
+    assert "CFBD_API_KEY" in err and "refresh stopped at ingest (exit 2)" in err
+
+
+def test_refresh_skip_ingest_on_empty_db_stops_at_build(settings, capsys):
+    assert cli.main(["refresh", "--skip-ingest"]) == 2
+    err = capsys.readouterr().err
+    assert "psu ingest" in err and "refresh stopped at build (exit 2)" in err
