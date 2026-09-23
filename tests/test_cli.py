@@ -167,3 +167,27 @@ def test_simulate_unknown_team_is_a_usage_error(settings, capsys):
     finally:
         con.close()
     assert "sim_team_summary" not in tables
+
+
+def test_parser_defaults_come_from_config():
+    parser = cli.build_parser()
+    b = parser.parse_args(["build"])
+    assert (b.garbage, b.alpha) == (config.GARBAGE, config.BUILD_ALPHA)
+    t = parser.parse_args(["train"])
+    assert (t.alpha, t.shrink_plays) == (config.TRAIN_ALPHA, config.SHRINK_PLAYS)
+    s = parser.parse_args(["simulate"])
+    assert (s.sims, s.seed, s.tau, s.team) == (config.SIM_N, config.SIM_SEED, config.SIM_TAU, config.TEAM)
+
+
+def test_database_in_use_is_a_clean_error(settings, capsys, monkeypatch):
+    import duckdb
+
+    from psu import db
+
+    def locked(*args, **kwargs):
+        raise duckdb.IOException("Could not set lock on file: held by PID 1234")
+
+    monkeypatch.setattr(db, "connect", locked)
+    assert cli.main(["build"]) == 2
+    err = capsys.readouterr().err
+    assert "in use by another process" in err and "PID 1234" in err
