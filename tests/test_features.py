@@ -8,6 +8,7 @@ from psu.features import (
     frozen_ratings,
     game_features,
     league_means,
+    ratings_as_of,
     rest_days,
     rolling_ratings,
     season_ratings,
@@ -172,12 +173,47 @@ def test_frozen_ratings_never_use_later_slates():
         }
     )
     other = ratings.assign(season=2023, off_epa=9.0)
-    frozen = frozen_ratings(pd.concat([ratings, other], ignore_index=True), 2024, 2).set_index(
+    snapshot = pd.DataFrame(
+        {"off_epa": [0.3, 0.5], "def_epa": 0.0, "off_sr": 0.0, "def_sr": 0.0},
+        index=pd.Index(["A", "C"], name="team"),
+    )
+    frozen = frozen_ratings(pd.concat([ratings, other], ignore_index=True), 2024, 2, snapshot).set_index(
         ["season", "slate", "team"]
     )
     assert frozen.loc[(2024, 1, "A"), "off_epa"] == 0.1  # before the as-of slate: unchanged
-    assert frozen.loc[(2024, 2, "A"), "off_epa"] == 0.3  # the as-of slate itself
-    assert frozen.loc[(2024, 3, "A"), "off_epa"] == 0.3  # later slates: frozen at slate 2
+    assert frozen.loc[(2024, 2, "A"), "off_epa"] == 0.3  # the as-of slate itself: snapshot value
+    assert frozen.loc[(2024, 3, "A"), "off_epa"] == 0.3  # later slates: frozen at the snapshot
     assert frozen.loc[(2024, 4, "A"), "off_epa"] == 0.3
-    assert frozen.loc[(2024, 3, "C"), "off_epa"] == 0.5  # C's first game is after slate 2: its row is prior-only
+    assert frozen.loc[(2024, 3, "C"), "off_epa"] == 0.5  # C's snapshot value
     assert (frozen.xs(2023, level="season")["off_epa"] == 9.0).all()  # other seasons untouched
+
+
+def test_ratings_as_of_matches_rolling_ratings_for_teams_playing_that_slate():
+    games = make_games(2024)
+    plays = make_plays(games)
+    rolling = rolling_ratings(plays, games, alpha=1.0, shrink_plays=10).set_index(["season", "slate", "team"])
+    snapshot = ratings_as_of(plays, games, season=2024, as_of_slate=3, alpha=1.0, shrink_plays=10)
+    for team in ("A", "D"):  # both play at slate 3
+        pd.testing.assert_series_equal(
+            snapshot.loc[team], rolling.loc[(2024, 3, team)][snapshot.columns], check_names=False
+        )
+
+
+def test_ratings_as_of_includes_a_bye_team_latest_game():
+    # A plays slates 1 and 3 but not 2 (a bye); B and D fill slate 2 so every slate has a game.
+    schedule = [(1, "A", "B"), (1, "C", "D"), (2, "B", "D"), (3, "A", "C")]
+    games = make_games(2024, schedule=schedule)
+    plays = make_plays(games)
+
+    snapshot_at_4 = ratings_as_of(plays, games, season=2024, as_of_slate=4, alpha=1.0, shrink_plays=10)
+    rolling = rolling_ratings(plays, games, alpha=1.0, shrink_plays=10).set_index(["season", "slate", "team"])
+    slate_3_row = rolling.loc[(2024, 3, "A")][snapshot_at_4.columns]
+
+    # A has no game at slate 4, so rolling_ratings has no row for it there; compute the expected value the
+    # same way ratings_as_of does: A's rating from all plays before slate 4 (its slate-1 and slate-3 games).
+    slates = slate_index(games)
+    merged = plays.merge(slates.rename(columns={"id": "game_id"})[["game_id", "slate"]], on="game_id")
+    expected = season_ratings(merged[merged["slate"] < 4], alpha=1.0).loc["A", snapshot_at_4.columns]
+
+    pd.testing.assert_series_equal(snapshot_at_4.loc["A"], expected, check_names=False)
+    assert not snapshot_at_4.loc["A"].equals(slate_3_row)  # it must include the slate-3 game, not just be stale

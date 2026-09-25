@@ -87,9 +87,9 @@ Each `psu simulate` run writes its summary to `sim_history`. It first deletes an
 
 1. Games whose slate is before N use actual results.
 2. Every game at or after slate N gets features from **ratings frozen at slate N**:
-   - `features.frozen_ratings(ratings, season, as_of_slate)` returns each team's row from the latest slate at or before N.
-   - A team with no row at or before N uses its first row of the season. That row holds only its preseason prior, because the team had played no games yet.
-   - A team that had a bye just before N carries a rating that is one week stale. That is acceptable: it never uses information from after N.
+   - `features.ratings_as_of(enriched, games, season=season, as_of_slate=N, ...)` rates every team with a game in `season` from all of that season's plays before slate N, blended with last season's final ratings -- the same computation `rolling_ratings` does for teams playing at slate N, extended to every team. A team coming off a bye is rated from its most recent game, not a stale earlier snapshot.
+   - `features.frozen_ratings(ratings, season, as_of_slate, snapshot)` copies that snapshot onto every row of `season` at or after N; earlier slates and other seasons are unchanged.
+   - A team with no games before N gets that snapshot's preseason-prior value, because it had played no games yet.
    - Rest and Vegas features are unchanged.
 3. The saved model predicts margins from those features; phase sigmas come from the report.
 4. The existing simulation code runs on those margins, and the rows are written with `backfilled = true`.

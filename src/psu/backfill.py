@@ -16,7 +16,7 @@ import joblib
 import pandas as pd
 
 from psu.config import TEAM
-from psu.features import FEATURES, assemble_features, frozen_ratings, rolling_ratings
+from psu.features import FEATURES, assemble_features, frozen_ratings, ratings_as_of, rolling_ratings
 from psu.simulate import (
     MissingModel,
     SimResult,
@@ -119,8 +119,11 @@ def backfill_history(
     season_games = inputs.games[inputs.games["season"] == season]
 
     def predict(n: int) -> pd.DataFrame:
+        snapshot = ratings_as_of(
+            inputs.enriched, inputs.games, season=season, as_of_slate=n, alpha=alpha, shrink_plays=shrink_plays
+        )
         feats = assemble_features(
-            frozen_ratings(ratings, season, n), season_games, inputs.lines, inputs.sp, inputs.talent
+            frozen_ratings(ratings, season, n, snapshot), season_games, inputs.lines, inputs.sp, inputs.talent
         )
         feats = feats[feats["slate"] >= n]
         return feats.assign(pred_margin=model.predict_margin(feats))[PREDICTION_COLUMNS]
