@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -126,7 +127,12 @@ def cmd_train(args: argparse.Namespace, settings: config.Settings) -> int:
         features = load_features(con, alpha=args.alpha, shrink_plays=args.shrink_plays)
         try:
             report = train_and_save(
-                con, features, current_season=settings.current_season, out_dir=settings.db_path.parent
+                con,
+                features,
+                current_season=settings.current_season,
+                out_dir=settings.db_path.parent,
+                alpha=args.alpha,
+                shrink_plays=args.shrink_plays,
             )
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
@@ -157,17 +163,30 @@ def _simulate(
     return 0, result
 
 
+def _trained_alpha_and_shrink_plays(out_dir) -> tuple[float, int]:
+    """The alpha and shrink_plays the saved model was trained with, falling back to today's defaults."""
+    path = out_dir / "reports" / "game_model.json"
+    if path.exists():
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            return float(report["alpha"]), int(report["shrink_plays"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            pass
+    return config.TRAIN_ALPHA, config.SHRINK_PLAYS
+
+
 def _backfill(settings: config.Settings, *, team: str, n_sims: int, seed: int, tau: float) -> int:
     season = settings.current_season
     try:
+        alpha, shrink_plays = _trained_alpha_and_shrink_plays(settings.db_path.parent)
         con = db.connect(settings.db_path)
         try:
             rows = backfill_history(
                 con,
                 season=season,
                 out_dir=settings.db_path.parent,
-                alpha=config.TRAIN_ALPHA,
-                shrink_plays=config.SHRINK_PLAYS,
+                alpha=alpha,
+                shrink_plays=shrink_plays,
                 team=team,
                 n_sims=n_sims,
                 seed=seed,

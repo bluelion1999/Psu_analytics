@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from psu.build import _PLAY_COLUMNS
-from psu.config import TEAM
+from psu.config import SHRINK_PLAYS, TEAM, TRAIN_ALPHA
 from psu.features import game_features
 from psu.models import game_predict as gp
 from psu.priors import empty_returning
@@ -147,12 +147,16 @@ def train_and_save(
     current_season: int,
     out_dir: Path,
     team: str = TEAM,
+    alpha: float = TRAIN_ALPHA,
+    shrink_plays: int = SHRINK_PLAYS,
 ) -> dict:
     report = gp.backtest(features, current_season, team=team)
     train = gp.training_rows(features)
     model = gp.fit(train, report["model_kind"])
     model.sigma_by_phase = report["sigma_by_phase"]
     report["final_train_games"] = int(len(train))
+    report["alpha"] = alpha
+    report["shrink_plays"] = shrink_plays
 
     predictions = features.copy()
     predictions["pred_margin"] = model.predict_margin(features)
