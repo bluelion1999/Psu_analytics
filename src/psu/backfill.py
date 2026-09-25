@@ -115,14 +115,12 @@ def backfill_history(
     _check_model_features(model)
     games, _ = load_inputs(con, season)
     inputs = load_feature_inputs(con)
-    ratings = rolling_ratings(
-        inputs.enriched, inputs.games, alpha=alpha, shrink_plays=shrink_plays, returning=inputs.returning
-    )
+    ratings = rolling_ratings(inputs.enriched, inputs.games, alpha=alpha, shrink_plays=shrink_plays)
     season_games = inputs.games[inputs.games["season"] == season]
 
     def predict(n: int) -> pd.DataFrame:
         feats = assemble_features(
-            frozen_ratings(ratings, season, n), season_games, inputs.lines, inputs.sp, inputs.talent, inputs.returning
+            frozen_ratings(ratings, season, n), season_games, inputs.lines, inputs.sp, inputs.talent
         )
         feats = feats[feats["slate"] >= n]
         return feats.assign(pred_margin=model.predict_margin(feats))[PREDICTION_COLUMNS]

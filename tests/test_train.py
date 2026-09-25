@@ -1,7 +1,6 @@
 import json
 
 import joblib
-import pandas as pd
 import pytest
 from conftest import synthetic_features
 
@@ -36,25 +35,6 @@ def test_train_and_save_writes_predictions_model_and_report(tmp_path):
     md = (tmp_path / "reports" / "game_model.md").read_text(encoding="utf-8")
     assert "Vegas" in md and "Penn State" in md
     report_markdown(report).encode("ascii")  # console-safe
-
-
-def test_load_feature_inputs_without_returning_table():
-    from conftest import seed_raw_tables
-
-    from psu import db
-    from psu.train import load_feature_inputs
-
-    con = connect(":memory:")
-    seed_raw_tables(con)
-    # A single all-null row (rather than a truly empty frame) so upsert's no-op-on-empty check
-    # doesn't skip creating the table; its null key means the row itself is dropped on insert.
-    # `rating` is an undeclared extra column on ratings_sp, so it must be listed explicitly.
-    extra_columns = {"lines": [], "ratings_sp": ["rating"], "talent": []}
-    for name, extras in extra_columns.items():
-        row = {c: None for c in [*db.SPECS[name].columns, *extras]}
-        db.upsert(con, db.SPECS[name], pd.DataFrame([row]))
-    inputs = load_feature_inputs(con)  # database built before returning production existed
-    assert list(inputs.returning.columns) == ["season", "team", "percent_ppa"] and inputs.returning.empty
 
 
 def test_train_and_save_records_custom_alpha_and_shrink_plays(tmp_path):

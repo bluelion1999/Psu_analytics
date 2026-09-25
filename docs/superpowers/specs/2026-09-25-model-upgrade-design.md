@@ -115,3 +115,17 @@ All tests use synthetic fixtures; none call the API.
 - `simulate`: `load_sigmas` handles old and new reports; the history upsert replaces the same `(season, as_of_slate)` and keeps the others; backfill fixes games before N to actual results.
 - `ingest`: the returning endpoint is scheduled with `SLOW_REFRESH` (mocked client).
 - Dashboard: the history loader returns an empty frame when the table is missing.
+
+## Outcome (2026-09-25)
+On the real data, the 2025 test season scored (model MAE, early-season model MAE):
+- Old raw prior, no `d_returning`: 12.517, 12.805
+- Projected prior + `d_returning`: 12.586, 13.096
+- Projected prior alone: 12.562, 13.032
+- `d_returning` alone: 12.541, 12.877
+
+Both the projected preseason prior (section 1, `psu/priors.py`) and the `d_returning` feature made
+predictions worse on every combination tried, so they were reverted: `rolling_ratings` goes back to
+using last season's final ratings directly as the prior, and `d_returning` was dropped from
+`FEATURES`. The returning-production ingest was kept as-is (data collected weekly, not yet used by
+the model), along with the phase sigmas, calibration report, `sim_history`, backfill, and
+`frozen_ratings` from the rest of this design.

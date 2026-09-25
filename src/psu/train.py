@@ -15,7 +15,6 @@ from psu.build import _PLAY_COLUMNS
 from psu.config import SHRINK_PLAYS, TEAM, TRAIN_ALPHA
 from psu.features import game_features
 from psu.models import game_predict as gp
-from psu.priors import empty_returning
 from psu.transform import enrich_plays
 
 PREDICTION_COLUMNS = [
@@ -46,16 +45,6 @@ class FeatureInputs:
     lines: pd.DataFrame
     sp: pd.DataFrame
     talent: pd.DataFrame
-    returning: pd.DataFrame
-
-
-def _returning(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    exists = con.execute(
-        "SELECT count(*) FROM information_schema.tables WHERE table_name = 'returning_production'"
-    ).fetchone()[0]
-    if not exists:
-        return empty_returning()  # database built before returning production was ingested
-    return con.execute("SELECT season, team, percent_ppa FROM returning_production").df()
 
 
 def load_feature_inputs(con: duckdb.DuckDBPyConnection) -> FeatureInputs:
@@ -71,15 +60,12 @@ def load_feature_inputs(con: duckdb.DuckDBPyConnection) -> FeatureInputs:
         lines=con.execute("SELECT game_id, spread FROM lines").df(),
         sp=con.execute("SELECT year, team, rating FROM ratings_sp").df(),
         talent=con.execute("SELECT year, team, talent FROM talent").df(),
-        returning=_returning(con),
     )
 
 
 def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
     i = load_feature_inputs(con)
-    return game_features(
-        i.enriched, i.games, i.lines, i.sp, i.talent, alpha=alpha, shrink_plays=shrink_plays, returning=i.returning
-    )
+    return game_features(i.enriched, i.games, i.lines, i.sp, i.talent, alpha=alpha, shrink_plays=shrink_plays)
 
 
 def _fmt(value, digits: int) -> str:

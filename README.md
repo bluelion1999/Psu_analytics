@@ -128,18 +128,19 @@ probability, compares itself with the closing Vegas line, and writes:
 - `data/reports/game_model.md` and `.json`: the backtest report.
 
 **Features** (home minus away): opponent-adjusted offensive and defensive EPA/play and success
-rate as of the game's week, last season's SP+ rating, the talent composite, rest days, a
-home-field flag (0 at neutral sites), and `d_returning` (the difference in returning offensive
-production, from CFBD's returning production endpoint).
+rate as of the game's week, last season's SP+ rating, the talent composite, rest days, and a
+home-field flag (0 at neutral sites).
 
 **No leakage:**
 - A game's team ratings are fit only on plays from earlier weeks of the same season. Early in the
   season they are blended with last season's final ratings. `--shrink-plays` sets how many plays it
   takes for the current season to dominate.
 - SP+ comes from the previous season, because CFBD's same-season SP+ reflects the whole season.
-- Preseason priors now regress last season's ratings using CFBD returning production (one extra
-  API call per season, refreshed weekly).
 - Evaluation is strictly time-based. The first season in the data (2022) serves only as a prior.
+
+Returning production is ingested from CFBD (one call per season, refreshed weekly) but is not yet
+used by the model; a projected preseason prior and a returning-production feature were tried and
+made predictions worse, so they were removed (see the model-upgrade design doc's Outcome section).
 
 **Evaluation:**
 - Validation trains on 2023 and evaluates on 2024; this picks the model (linear beat XGBoost) and
