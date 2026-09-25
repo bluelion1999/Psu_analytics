@@ -11,6 +11,7 @@ from collections.abc import Callable
 import duckdb
 
 from psu import config, db
+from psu.backfill import backfill_history
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import IngestResult, ingest
@@ -156,8 +157,39 @@ def _simulate(
     return 0, result
 
 
+def _backfill(settings: config.Settings, *, team: str, n_sims: int, seed: int, tau: float) -> int:
+    season = settings.current_season
+    try:
+        con = db.connect(settings.db_path)
+        try:
+            rows = backfill_history(
+                con,
+                season=season,
+                out_dir=settings.db_path.parent,
+                alpha=config.TRAIN_ALPHA,
+                shrink_plays=config.SHRINK_PLAYS,
+                team=team,
+                n_sims=n_sims,
+                seed=seed,
+                tau=tau,
+            )
+        finally:
+            con.close()
+    except (MissingModel, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if rows.empty:
+        print(f"backfill: no finished weeks in {season} yet; nothing to replay")
+    else:
+        print(f"backfill: replayed {len(rows)} week(s) of {season} into sim_history")
+    return 0
+
+
 def cmd_simulate(args: argparse.Namespace, settings: config.Settings) -> int:
-    return _simulate(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)[0]
+    code = _simulate(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)[0]
+    if code or not args.backfill:
+        return code
+    return _backfill(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)
 
 
 def _db_error(e: duckdb.IOException, settings: config.Settings) -> int:
@@ -246,6 +278,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--tau", type=float, default=config.SIM_TAU, help="Spread (points) of each team's season-long strength draw"
     )
     sim.add_argument("--team", default=config.TEAM, help="Team to report on")
+    sim.add_argument(
+        "--backfill", action="store_true", help="Also replay each finished week of the season into sim_history"
+    )
     ref = sub.add_parser("refresh", help="Run ingest (current season), build, train and simulate in order")
     ref.add_argument("--skip-ingest", action="store_true", help="Skip ingest (no API calls); rebuild from local data")
     ref.add_argument("--max-calls", type=int, help="Stop ingest before making more than this many API calls")

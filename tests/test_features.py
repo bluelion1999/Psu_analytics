@@ -5,6 +5,7 @@ import pytest
 from psu.features import (
     FEATURES,
     MAX_REST,
+    frozen_ratings,
     game_features,
     league_means,
     rest_days,
@@ -210,3 +211,27 @@ def test_game_features_are_home_minus_away_and_fbs_only():
     assert f.loc[202401, "home_field"] == 1
     assert np.isnan(f.loc[202405, "margin"])
     assert np.isnan(f.loc[202401, "vegas_margin"])
+
+
+def test_frozen_ratings_never_use_later_slates():
+    ratings = pd.DataFrame(
+        {
+            "season": 2024,
+            "slate": [1, 1, 2, 3, 3, 4],
+            "team": ["A", "B", "A", "A", "C", "A"],
+            "off_epa": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            "def_epa": 0.0,
+            "off_sr": 0.0,
+            "def_sr": 0.0,
+        }
+    )
+    other = ratings.assign(season=2023, off_epa=9.0)
+    frozen = frozen_ratings(pd.concat([ratings, other], ignore_index=True), 2024, 2).set_index(
+        ["season", "slate", "team"]
+    )
+    assert frozen.loc[(2024, 1, "A"), "off_epa"] == 0.1  # before the as-of slate: unchanged
+    assert frozen.loc[(2024, 2, "A"), "off_epa"] == 0.3  # the as-of slate itself
+    assert frozen.loc[(2024, 3, "A"), "off_epa"] == 0.3  # later slates: frozen at slate 2
+    assert frozen.loc[(2024, 4, "A"), "off_epa"] == 0.3
+    assert frozen.loc[(2024, 3, "C"), "off_epa"] == 0.5  # C's first game is after slate 2: its row is prior-only
+    assert (frozen.xs(2023, level="season")["off_epa"] == 9.0).all()  # other seasons untouched

@@ -133,6 +133,11 @@ def test_simulate_requires_trained_model(settings, capsys):
     assert not settings.db_path.exists()
 
 
+def test_simulate_backfill_requires_trained_model(settings, capsys):
+    assert cli.main(["simulate", "--backfill"]) == 2
+    assert "psu train" in capsys.readouterr().err
+
+
 def test_simulate_writes_tables_and_prints_summary(settings, capsys):
     import duckdb
 
@@ -177,6 +182,8 @@ def test_parser_defaults_come_from_config():
     assert (t.alpha, t.shrink_plays) == (config.TRAIN_ALPHA, config.SHRINK_PLAYS)
     s = parser.parse_args(["simulate"])
     assert (s.sims, s.seed, s.tau, s.team) == (config.SIM_N, config.SIM_SEED, config.SIM_TAU, config.TEAM)
+    assert s.backfill is False
+    assert parser.parse_args(["simulate", "--backfill"]).backfill is True
 
 
 def test_database_in_use_is_a_clean_error(settings, capsys, monkeypatch):

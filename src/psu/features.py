@@ -117,6 +117,23 @@ def rolling_ratings(
     return pd.concat(frames, ignore_index=True)
 
 
+def frozen_ratings(ratings: pd.DataFrame, season: int, as_of_slate: int) -> pd.DataFrame:
+    """Ratings as they stood at the start of as_of_slate, copied onto every later slate of `season`.
+
+    Each team takes its row from the latest slate at or before as_of_slate. A team whose first game comes later
+    uses that first row, which holds only its preseason prior because it had played no games. Other seasons and
+    earlier slates are unchanged.
+    """
+    this = ratings[ratings["season"] == season].sort_values("slate")
+    known = this[this["slate"] <= as_of_slate].drop_duplicates("team", keep="last").set_index("team")
+    first = this.drop_duplicates("team", keep="first").set_index("team")
+    snapshot = pd.concat([known, first[~first.index.isin(known.index)]])[RATING_COLUMNS]
+    out = ratings.copy()
+    later = (out["season"] == season) & (out["slate"] >= as_of_slate)
+    out.loc[later, RATING_COLUMNS] = out.loc[later, ["team"]].join(snapshot, on="team")[RATING_COLUMNS].to_numpy()
+    return out
+
+
 FEATURES = [
     "home_field",
     "d_off_epa",
