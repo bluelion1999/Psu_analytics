@@ -53,11 +53,14 @@ def test_load_sigmas_falls_back_for_old_reports(tmp_path):
     assert load_sigmas(tmp_path) == {"early": 18.5, "mid": 15.0, "post": 16.0}
 
 
+NOW = pd.Timestamp(2026, 9, 2)  # just after synthetic_league's played games; keeps every open week within the grace
+
+
 def test_write_history_replaces_the_same_week_and_keeps_others():
     con = connect(":memory:")
     games, upcoming = synthetic_league()
-    first = run_simulation(games, upcoming, season=2026, sigma=16.0, team="A", n_sims=100, seed=1)
-    second = run_simulation(games, upcoming, season=2026, sigma=16.0, team="A", n_sims=100, seed=2)
+    first = run_simulation(games, upcoming, season=2026, sigma=16.0, team="A", n_sims=100, seed=1, now=NOW)
+    second = run_simulation(games, upcoming, season=2026, sigma=16.0, team="A", n_sims=100, seed=2, now=NOW)
     stamp = pd.Timestamp("2026-09-20 12:00")
     write_history(con, history_rows([first], backfilled=False, run_at=stamp))
     write_history(con, history_rows([second], backfilled=False, run_at=stamp + pd.Timedelta(days=1)))
@@ -73,7 +76,7 @@ def test_write_history_replaces_the_same_week_and_keeps_others():
 def test_write_results_also_records_history(tmp_path):
     con = connect(":memory:")
     games, upcoming = synthetic_league()
-    result = run_simulation(games, upcoming, season=2026, sigma=16.0, team="A", n_sims=100)
+    result = run_simulation(games, upcoming, season=2026, sigma=16.0, team="A", n_sims=100, now=NOW)
     write_results(con, result, tmp_path)
     write_results(con, result, tmp_path)
     assert con.execute("SELECT count(*), min(as_of_slate), bool_and(NOT backfilled) FROM sim_history").fetchone() == (

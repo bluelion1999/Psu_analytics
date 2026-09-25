@@ -22,6 +22,7 @@ from psu.sim.standings import top_two
 log = logging.getLogger(__name__)
 
 CONFERENCE = "Big Ten"
+STALE_AFTER_DAYS = 3  # a regular-season game this long past kickoff without `completed` is treated as finished
 
 
 class MissingModel(RuntimeError):
@@ -50,10 +51,26 @@ def makes_cfp(losses, champion, max_losses: int = 2) -> np.ndarray:
     return np.asarray(champion, dtype=bool) | (np.asarray(losses) <= max_losses)
 
 
-def current_slate(games: pd.DataFrame, season: int) -> int:
-    """First regular-season week with an unfinished game (one past the last week once all are played)."""
+def _naive(ts):
+    """Strip tz info (assumed UTC) so tz-aware and naive timestamps can be compared safely."""
+    if isinstance(ts, pd.Timestamp):
+        return ts.tz_localize(None) if ts.tzinfo is not None else ts
+    ts = pd.to_datetime(ts)
+    return ts.dt.tz_localize(None) if ts.dt.tz is not None else ts
+
+
+def current_slate(games: pd.DataFrame, season: int, *, now: pd.Timestamp | None = None) -> int:
+    """First regular-season week with an unfinished game (one past the last week once all are played).
+
+    A game counts as finished if `completed` is true, or if its kickoff was more than
+    STALE_AFTER_DAYS days ago -- this keeps a cancelled game that never gets marked completed
+    (e.g. 2024 week 5 App State vs Liberty) from freezing the as-of week forever.
+    """
+    now = _naive(pd.Timestamp.now() if now is None else pd.Timestamp(now))
     regular = games[(games["season"] == season) & (games["season_type"] == "regular")]
-    open_weeks = regular.loc[~regular["completed"].fillna(False).astype(bool), "week"]
+    completed = regular["completed"].fillna(False).astype(bool)
+    stale = _naive(regular["start_date"]) < (now - pd.Timedelta(days=STALE_AFTER_DAYS))
+    open_weeks = regular.loc[~(completed | stale), "week"]
     if len(open_weeks):
         return int(open_weeks.min())
     return int(regular["week"].max()) + 1 if len(regular) else 1
@@ -72,6 +89,7 @@ def run_simulation(
     cfp_max_losses: int = 2,
     unrated_win_prob: float = 0.95,
     conference: str = CONFERENCE,
+    now: pd.Timestamp | None = None,
 ) -> SimResult:
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
@@ -242,7 +260,7 @@ def run_simulation(
                 "p_conf_champ": np.bincount(champion, minlength=n_members) / n_sims,
             }
         ),
-        as_of_slate=current_slate(games, season),
+        as_of_slate=current_slate(games, season, now=now),
     )
 
 

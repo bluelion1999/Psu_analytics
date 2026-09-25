@@ -3,6 +3,8 @@ from conftest import synthetic_league
 
 from psu.backfill import replay_games, simulate_as_of
 
+NOW = pd.Timestamp(2026, 9, 2)  # just after synthetic_league's played games; keeps every open week within the grace
+
 
 def all_predictions(games):
     """A prediction for every synthetic-league game, including the two already played."""
@@ -40,7 +42,7 @@ def test_simulate_as_of_replays_each_finished_week():
         seen.append(n)
         return all_predictions(games)
 
-    results = simulate_as_of(games, predict, season=2026, sigma=16.0, team="B", n_sims=500, seed=0, tau=0.1)
+    results = simulate_as_of(games, predict, season=2026, sigma=16.0, team="B", n_sims=500, seed=0, tau=0.1, now=NOW)
     assert seen == [1]  # week 1 is the only finished week in the synthetic league
     assert [r.as_of_slate for r in results] == [1]
     # As of week 1, B's loss to A hasn't happened yet, so B can still win all three of its games.
@@ -52,6 +54,14 @@ def test_backfill_before_any_games_writes_nothing():
     games, _ = synthetic_league()
     unplayed = replay_games(games, 1)
     results = simulate_as_of(
-        unplayed, lambda n: all_predictions(games), season=2026, sigma=16.0, team="A", n_sims=50, seed=0, tau=0.1
+        unplayed,
+        lambda n: all_predictions(games),
+        season=2026,
+        sigma=16.0,
+        team="A",
+        n_sims=50,
+        seed=0,
+        tau=0.1,
+        now=NOW,
     )
     assert results == []

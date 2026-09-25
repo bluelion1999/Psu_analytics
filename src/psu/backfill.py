@@ -51,13 +51,22 @@ def simulate_as_of(
     n_sims: int,
     seed: int,
     tau: float,
+    now: pd.Timestamp | None = None,
 ) -> list[SimResult]:
     """One simulation per finished week N (1 .. current - 1), from predict(N) and the games as of N."""
     return [
         run_simulation(
-            replay_games(games, n), predict(n), season=season, sigma=sigma, team=team, n_sims=n_sims, seed=seed, tau=tau
+            replay_games(games, n),
+            predict(n),
+            season=season,
+            sigma=sigma,
+            team=team,
+            n_sims=n_sims,
+            seed=seed,
+            tau=tau,
+            now=now,
         )
-        for n in range(1, current_slate(games, season))
+        for n in range(1, current_slate(games, season, now=now))
     ]
 
 
@@ -72,6 +81,7 @@ def backfill_history(
     n_sims: int,
     seed: int,
     tau: float,
+    now: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     model_path = Path(out_dir) / "models" / "game_model.joblib"
     if not model_path.exists():
@@ -92,7 +102,9 @@ def backfill_history(
         feats = feats[feats["slate"] >= n]
         return feats.assign(pred_margin=model.predict_margin(feats))[PREDICTION_COLUMNS]
 
-    results = simulate_as_of(games, predict, season=season, sigma=sigmas, team=team, n_sims=n_sims, seed=seed, tau=tau)
+    results = simulate_as_of(
+        games, predict, season=season, sigma=sigmas, team=team, n_sims=n_sims, seed=seed, tau=tau, now=now
+    )
     rows = history_rows(results, backfilled=True)
     con.execute("BEGIN TRANSACTION")
     try:

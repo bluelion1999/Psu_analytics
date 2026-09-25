@@ -5,14 +5,15 @@ import pandas as pd
 import pytest
 from conftest import synthetic_league
 
-from psu.simulate import MissingModel, makes_cfp, run_simulation
+from psu.simulate import MissingModel, current_slate, makes_cfp, run_simulation
 
 SIGMA = 16.0
+NOW = pd.Timestamp(2026, 9, 2)  # just after synthetic_league's played games; keeps every open week within the grace
 
 
 def run(team="A", games=None, upcoming=None, **kw):
     g, u = synthetic_league()
-    kw = {"season": 2026, "sigma": SIGMA, "team": team, "n_sims": 2000, "seed": 0, **kw}
+    kw = {"season": 2026, "sigma": SIGMA, "team": team, "n_sims": 2000, "seed": 0, "now": NOW, **kw}
     return run_simulation(g if games is None else games, u if upcoming is None else upcoming, **kw)
 
 
@@ -187,3 +188,34 @@ def test_bad_tau_for_any_phase_fails_fast():
 
 def test_as_of_slate_is_the_first_unfinished_week():
     assert run().as_of_slate == 2  # synthetic league: week 1 played, week 2 onward open
+
+
+def test_current_slate_skips_a_stale_cancelled_game():
+    """A game that never gets marked completed (e.g. cancelled) must not freeze the as-of week forever."""
+    games = pd.DataFrame(
+        {
+            "season": [2026, 2026, 2026],
+            "season_type": ["regular"] * 3,
+            "week": [1, 2, 3],
+            "completed": [True, False, False],
+            "start_date": [
+                pd.Timestamp(2026, 9, 1),
+                pd.Timestamp(2026, 9, 8),  # cancelled: never completed, but long past
+                pd.Timestamp(2026, 9, 22),  # a real upcoming game
+            ],
+        }
+    )
+    assert current_slate(games, 2026, now=pd.Timestamp(2026, 9, 23)) == 3
+
+
+def test_current_slate_handles_tz_aware_start_dates():
+    games = pd.DataFrame(
+        {
+            "season": [2026, 2026],
+            "season_type": ["regular"] * 2,
+            "week": [1, 2],
+            "completed": [False, False],
+            "start_date": pd.to_datetime(["2026-09-08", "2026-09-22"], utc=True),
+        }
+    )
+    assert current_slate(games, 2026, now=pd.Timestamp(2026, 9, 23)) == 2
