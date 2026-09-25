@@ -136,6 +136,8 @@ home-field flag (0 at neutral sites).
   season they are blended with last season's final ratings. `--shrink-plays` sets how many plays it
   takes for the current season to dominate.
 - SP+ comes from the previous season, because CFBD's same-season SP+ reflects the whole season.
+- Preseason priors now regress last season's ratings using CFBD returning production (one extra
+  API call per season, refreshed weekly).
 - Evaluation is strictly time-based. The first season in the data (2022) serves only as a prior.
 
 **Evaluation:**
@@ -145,6 +147,8 @@ home-field flag (0 at neutral sites).
 - The final model is refit on every completed game from 2023 onward.
 
 Win probability is `NormalCDF(margin / sigma)`, with sigma taken from out-of-fold residuals.
+Win probabilities use separate sigmas for weeks 1–4, week 5 on, and the postseason.
+`data/reports/game_model.md` shows reliability and ECE.
 
 2025 test season:
 
@@ -171,7 +175,11 @@ For honest pregame numbers on past games, use the backtest report.
 ```
 .venv\Scripts\psu simulate                 # 10,000 seasons, seed 0, tau 5
 .venv\Scripts\psu simulate --sims 50000 --seed 1 --tau 4
+.venv\Scripts\psu simulate --backfill      # after the normal run, replay each finished week into sim_history
 ```
+
+`psu simulate --backfill`: after the normal run, replays each finished week of the current season into
+`sim_history` for the dashboard's "Odds over time" chart. It makes no API calls.
 
 Run `psu train` first. The simulator reads `game_predictions` and the model's sigma from
 `data/reports/game_model.json`. It makes no API calls, and a full run takes about 3 seconds.
