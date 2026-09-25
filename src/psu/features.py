@@ -66,6 +66,31 @@ def season_ratings(enriched: pd.DataFrame, alpha: float) -> pd.DataFrame:
     )
 
 
+def _ratings_at(
+    teams: pd.Index,
+    this_season: pd.DataFrame,
+    slate: int,
+    prior: pd.DataFrame,
+    season_means: dict[str, float],
+    *,
+    alpha: float,
+    shrink_plays: int,
+) -> pd.DataFrame:
+    """Ratings for `teams` as of the start of `slate`: plays before `slate`, blended with `prior`."""
+    current = season_ratings(this_season[this_season["slate"] < slate], alpha).reindex(teams)
+    prior_now = prior.reindex(teams)
+    out = pd.DataFrame(index=teams)
+    for column in RATING_COLUMNS:
+        side, kind = column.split("_")
+        n = current[f"{side}_plays"].astype(float).fillna(0.0)
+        weight = (n / (n + shrink_plays)).fillna(0.0)
+        p = prior_now[column].astype(float).fillna(season_means[kind])
+        c = current[column].astype(float)
+        blended = weight * c.fillna(0.0) + (1 - weight) * p
+        out[column] = blended.where(p.notna(), c)
+    return out.reset_index()
+
+
 def rolling_ratings(
     enriched: pd.DataFrame,
     games: pd.DataFrame,
@@ -85,22 +110,50 @@ def rolling_ratings(
         season_games = games[games["season"] == season].merge(slates[["id", "slate"]], on="id")
         for slate, slate_games in season_games.groupby("slate"):
             teams = pd.Index(sorted(set(slate_games["home_team"]) | set(slate_games["away_team"])), name="team")
-            current = season_ratings(this_season[this_season["slate"] < slate], alpha).reindex(teams)
-            prior_now = prior.reindex(teams)
-            out = pd.DataFrame(index=teams)
-            for column in RATING_COLUMNS:
-                side, kind = column.split("_")
-                n = current[f"{side}_plays"].astype(float).fillna(0.0)
-                weight = (n / (n + shrink_plays)).fillna(0.0)
-                p = prior_now[column].astype(float).fillna(means[kind])
-                c = current[column].astype(float)
-                blended = weight * c.fillna(0.0) + (1 - weight) * p
-                out[column] = blended.where(p.notna(), c)
-            out = out.reset_index()
+            out = _ratings_at(teams, this_season, slate, prior, means, alpha=alpha, shrink_plays=shrink_plays)
             out.insert(0, "slate", int(slate))
             out.insert(0, "season", int(season))
             frames.append(out)
     return pd.concat(frames, ignore_index=True)
+
+
+def ratings_as_of(
+    enriched: pd.DataFrame,
+    games: pd.DataFrame,
+    *,
+    season: int,
+    as_of_slate: int,
+    alpha: float,
+    shrink_plays: int,
+) -> pd.DataFrame:
+    """Ratings for every team with a game in `season`, as of the start of as_of_slate.
+
+    Unlike `rolling_ratings`, this rates every team in the season from all of its plays before as_of_slate,
+    not just the teams scheduled at as_of_slate itself -- so a team coming off a bye is rated from its most
+    recent game, not a stale earlier snapshot.
+    """
+    slates = slate_index(games)
+    plays = enriched.merge(slates.rename(columns={"id": "game_id"})[["game_id", "slate"]], on="game_id")
+    previous = plays[plays["season"] == season - 1]
+    prior = season_ratings(previous, alpha)
+    means = league_means(previous) if not previous.empty else {"epa": np.nan, "sr": np.nan}
+    this_season = plays[plays["season"] == season]
+    season_games = games[games["season"] == season]
+    teams = pd.Index(sorted(set(season_games["home_team"]) | set(season_games["away_team"])), name="team")
+    out = _ratings_at(teams, this_season, as_of_slate, prior, means, alpha=alpha, shrink_plays=shrink_plays)
+    return out.set_index("team")[RATING_COLUMNS]
+
+
+def frozen_ratings(ratings: pd.DataFrame, season: int, as_of_slate: int, snapshot: pd.DataFrame) -> pd.DataFrame:
+    """Ratings as they stood at the start of as_of_slate, copied onto every later slate of `season`.
+
+    `snapshot` (indexed by team, from `ratings_as_of`) supplies the values for every team with a game at or
+    after as_of_slate. Earlier slates and other seasons are unchanged.
+    """
+    out = ratings.copy()
+    later = (out["season"] == season) & (out["slate"] >= as_of_slate)
+    out.loc[later, RATING_COLUMNS] = out.loc[later, ["team"]].join(snapshot, on="team")[RATING_COLUMNS].to_numpy()
+    return out
 
 
 FEATURES = ["home_field", "d_off_epa", "d_def_epa", "d_off_sr", "d_def_sr", "d_prior_sp", "d_talent", "d_rest"]
@@ -122,18 +175,14 @@ GAME_COLUMNS = [
 ]
 
 
-def game_features(
-    enriched: pd.DataFrame,
+def assemble_features(
+    ratings: pd.DataFrame,
     games: pd.DataFrame,
     lines: pd.DataFrame,
     sp: pd.DataFrame,
     talent: pd.DataFrame,
-    *,
-    alpha: float,
-    shrink_plays: int,
 ) -> pd.DataFrame:
-    """One row per FBS-vs-FBS game: pregame home-minus-away features, the Vegas margin, and the result."""
-    ratings = rolling_ratings(enriched, games, alpha=alpha, shrink_plays=shrink_plays)
+    """One row per FBS-vs-FBS game from precomputed slate ratings: home-minus-away features, Vegas, result."""
     g = games[(games["home_classification"] == "fbs") & (games["away_classification"] == "fbs")]
     g = g.merge(slate_index(games)[["id", "slate"]], on="id")
     prior_sp = sp.assign(season=sp["year"] + 1)[["season", "team", "rating"]]
@@ -161,3 +210,18 @@ def game_features(
     g["d_rest"] = g["home_rest"] - g["away_rest"]
     g["margin"] = np.where(g["completed"].eq(True), g["home_points"] - g["away_points"], np.nan)
     return g.rename(columns={"id": "game_id"})[GAME_COLUMNS + FEATURES].reset_index(drop=True)
+
+
+def game_features(
+    enriched: pd.DataFrame,
+    games: pd.DataFrame,
+    lines: pd.DataFrame,
+    sp: pd.DataFrame,
+    talent: pd.DataFrame,
+    *,
+    alpha: float,
+    shrink_plays: int,
+) -> pd.DataFrame:
+    """One row per FBS-vs-FBS game: pregame home-minus-away features, the Vegas margin, and the result."""
+    ratings = rolling_ratings(enriched, games, alpha=alpha, shrink_plays=shrink_plays)
+    return assemble_features(ratings, games, lines, sp, talent)

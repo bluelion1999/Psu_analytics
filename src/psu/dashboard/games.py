@@ -10,6 +10,7 @@ import pandas as pd
 
 from psu.dashboard.common import has_table, require, team_games
 from psu.dashboard.winprob import in_game_wp
+from psu.models.game_predict import phase_of
 
 BOX_STATS = [  # (team_game_stats category, label)
     ("totalYards", "Total yards"),
@@ -104,6 +105,15 @@ def top_plays(con: duckdb.DuckDBPyConnection, game_id: int, n: int = 10) -> pd.D
     ).df()
     df["clock"] = _clock(df["clock_minutes"], df["clock_seconds"])
     return df[["quarter", "clock", "offense", "down", "distance", "epa", "text"]]
+
+
+def game_phase(con: duckdb.DuckDBPyConnection, game_id: int) -> str:
+    """The model phase ("early", "mid" or "post") of a game, or "mid" if the game is not found."""
+    row = con.execute("SELECT season_type, week FROM games WHERE id = ?", [game_id]).fetchone()
+    if row is None:
+        return "mid"
+    season_type, week = row
+    return str(phase_of([season_type], [week])[0])
 
 
 def win_probability(con: duckdb.DuckDBPyConnection, game_id: int, sigma: float) -> pd.DataFrame:

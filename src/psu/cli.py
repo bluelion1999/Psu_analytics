@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -11,10 +12,11 @@ from collections.abc import Callable
 import duckdb
 
 from psu import config, db
+from psu.backfill import backfill_history
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import IngestResult, ingest
-from psu.simulate import MissingModel, SimResult, load_sigma, simulate_season, write_results
+from psu.simulate import MissingModel, SimResult, load_sigmas, simulate_season, write_results
 from psu.simulate import report_markdown as sim_report
 from psu.train import load_features, report_markdown, train_and_save
 from psu.transform import GarbageTime
@@ -125,7 +127,12 @@ def cmd_train(args: argparse.Namespace, settings: config.Settings) -> int:
         features = load_features(con, alpha=args.alpha, shrink_plays=args.shrink_plays)
         try:
             report = train_and_save(
-                con, features, current_season=settings.current_season, out_dir=settings.db_path.parent
+                con,
+                features,
+                current_season=settings.current_season,
+                out_dir=settings.db_path.parent,
+                alpha=args.alpha,
+                shrink_plays=args.shrink_plays,
             )
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
@@ -140,7 +147,7 @@ def _simulate(
     settings: config.Settings, *, team: str, n_sims: int, seed: int, tau: float
 ) -> tuple[int, SimResult | None]:
     try:
-        sigma = load_sigma(settings.db_path.parent)
+        sigma = load_sigmas(settings.db_path.parent)
         con = db.connect(settings.db_path)
         try:
             result = simulate_season(
@@ -156,8 +163,52 @@ def _simulate(
     return 0, result
 
 
+def _trained_alpha_and_shrink_plays(out_dir) -> tuple[float, int]:
+    """The alpha and shrink_plays the saved model was trained with, falling back to today's defaults."""
+    path = out_dir / "reports" / "game_model.json"
+    if path.exists():
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            return float(report["alpha"]), int(report["shrink_plays"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            pass
+    return config.TRAIN_ALPHA, config.SHRINK_PLAYS
+
+
+def _backfill(settings: config.Settings, *, team: str, n_sims: int, seed: int, tau: float) -> int:
+    season = settings.current_season
+    try:
+        alpha, shrink_plays = _trained_alpha_and_shrink_plays(settings.db_path.parent)
+        con = db.connect(settings.db_path)
+        try:
+            rows = backfill_history(
+                con,
+                season=season,
+                out_dir=settings.db_path.parent,
+                alpha=alpha,
+                shrink_plays=shrink_plays,
+                team=team,
+                n_sims=n_sims,
+                seed=seed,
+                tau=tau,
+            )
+        finally:
+            con.close()
+    except (MissingModel, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if rows.empty:
+        print(f"backfill: no finished weeks in {season} yet; nothing to replay")
+    else:
+        print(f"backfill: replayed {len(rows)} week(s) of {season} into sim_history")
+    return 0
+
+
 def cmd_simulate(args: argparse.Namespace, settings: config.Settings) -> int:
-    return _simulate(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)[0]
+    code = _simulate(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)[0]
+    if code or not args.backfill:
+        return code
+    return _backfill(settings, team=args.team, n_sims=args.sims, seed=args.seed, tau=args.tau)
 
 
 def _db_error(e: duckdb.IOException, settings: config.Settings) -> int:
@@ -246,6 +297,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--tau", type=float, default=config.SIM_TAU, help="Spread (points) of each team's season-long strength draw"
     )
     sim.add_argument("--team", default=config.TEAM, help="Team to report on")
+    sim.add_argument(
+        "--backfill", action="store_true", help="Also replay each finished week of the season into sim_history"
+    )
     ref = sub.add_parser("refresh", help="Run ingest (current season), build, train and simulate in order")
     ref.add_argument("--skip-ingest", action="store_true", help="Skip ingest (no API calls); rebuild from local data")
     ref.add_argument("--max-calls", type=int, help="Stop ingest before making more than this many API calls")

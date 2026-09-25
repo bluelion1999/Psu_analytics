@@ -8,6 +8,7 @@ from psu.dashboard.games import (
     box_score,
     drive_chart,
     game_options,
+    game_phase,
     line_scores,
     top_plays,
     win_probability,
@@ -93,6 +94,11 @@ def test_win_probability_runs_kickoff_to_final(con):
     assert wp.iloc[-1]["home_wp"] == pytest.approx(1.0) and wp.iloc[-1]["home_margin"] == 24
     assert wp["minute"].is_monotonic_increasing
     assert wp["home_wp"].between(0, 1).all()
+
+
+def test_game_phase_is_early_for_early_weeks_and_mid_for_unknown_games(con):
+    assert game_phase(con, 101) == "early"  # 2025 week 1, regular season
+    assert game_phase(con, 999999) == "mid"
 
 
 def test_win_probability_without_predictions_starts_even():

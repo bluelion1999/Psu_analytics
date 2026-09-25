@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from psu import cli, config
@@ -52,7 +53,7 @@ def test_ingest_success_reports_calls_and_counts(settings, capsys, monkeypatch, 
     monkeypatch.setattr(cli, "make_fetch", lambda s: fake_cfbd)
     assert cli.main(["ingest", "--seasons", "2024"]) == 0
     out = capsys.readouterr().out
-    assert "API calls this run: 17" in out
+    assert "API calls this run: 18" in out
     assert "plays" in out
 
 
@@ -133,6 +134,44 @@ def test_simulate_requires_trained_model(settings, capsys):
     assert not settings.db_path.exists()
 
 
+def test_simulate_backfill_requires_trained_model(settings, capsys):
+    assert cli.main(["simulate", "--backfill"]) == 2
+    assert "psu train" in capsys.readouterr().err
+
+
+def test_trained_alpha_and_shrink_plays_reads_the_saved_report(settings):
+    reports = settings.db_path.parent / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "game_model.json").write_text('{"alpha": 5.0, "shrink_plays": 10}', encoding="utf-8")
+    assert cli._trained_alpha_and_shrink_plays(settings.db_path.parent) == (5.0, 10)
+
+
+def test_trained_alpha_and_shrink_plays_falls_back_to_defaults_when_absent(settings):
+    reports = settings.db_path.parent / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "game_model.json").write_text('{"sigma": 16.0}', encoding="utf-8")  # older report: no alpha recorded
+    assert cli._trained_alpha_and_shrink_plays(settings.db_path.parent) == (config.TRAIN_ALPHA, config.SHRINK_PLAYS)
+    assert cli._trained_alpha_and_shrink_plays(settings.db_path.parent / "missing") == (
+        config.TRAIN_ALPHA,
+        config.SHRINK_PLAYS,
+    )
+
+
+def test_backfill_uses_the_trained_alpha_and_shrink_plays(settings, monkeypatch):
+    _trained(settings)
+    reports = settings.db_path.parent / "reports"
+    (reports / "game_model.json").write_text('{"sigma": 16.0, "alpha": 3.0, "shrink_plays": 40}', encoding="utf-8")
+    seen = {}
+
+    def fake_backfill_history(con, **kw):
+        seen.update(kw)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(cli, "backfill_history", fake_backfill_history)
+    assert cli._backfill(settings, team="A", n_sims=50, seed=0, tau=5.0) == 0
+    assert seen["alpha"] == 3.0 and seen["shrink_plays"] == 40
+
+
 def test_simulate_writes_tables_and_prints_summary(settings, capsys):
     import duckdb
 
@@ -177,6 +216,8 @@ def test_parser_defaults_come_from_config():
     assert (t.alpha, t.shrink_plays) == (config.TRAIN_ALPHA, config.SHRINK_PLAYS)
     s = parser.parse_args(["simulate"])
     assert (s.sims, s.seed, s.tau, s.team) == (config.SIM_N, config.SIM_SEED, config.SIM_TAU, config.TEAM)
+    assert s.backfill is False
+    assert parser.parse_args(["simulate", "--backfill"]).backfill is True
 
 
 def test_database_in_use_is_a_clean_error(settings, capsys, monkeypatch):

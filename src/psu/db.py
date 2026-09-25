@@ -187,6 +187,21 @@ SPECS: dict[str, TableSpec] = {
             {"year": "INTEGER", "team": "VARCHAR", "rank": "INTEGER", "points": "DOUBLE"},
         ),
         TableSpec(
+            "returning_production",
+            ("season", "team"),
+            {
+                "season": "INTEGER",
+                "team": "VARCHAR",
+                "conference": "VARCHAR",
+                "percent_ppa": "DOUBLE",
+                "percent_passing_ppa": "DOUBLE",
+                "percent_receiving_ppa": "DOUBLE",
+                "percent_rushing_ppa": "DOUBLE",
+                "usage": "DOUBLE",
+            },
+            extra_type="DOUBLE",
+        ),
+        TableSpec(
             "lines",
             ("game_id", "provider"),
             {

@@ -7,7 +7,7 @@ from typing import Any
 import duckdb
 import pandas as pd
 
-from psu.dashboard.common import MissingData, require
+from psu.dashboard.common import MissingData, has_table, require
 from psu.dashboard.overview import schedule
 
 
@@ -34,6 +34,19 @@ def sim_conference(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return con.execute(
         "SELECT team, mean_conf_wins, p_title_game, p_conf_champ FROM sim_conference "
         "ORDER BY p_conf_champ DESC, p_title_game DESC, team"
+    ).df()
+
+
+HISTORY_VIEW_COLUMNS = ["as_of_slate", "p_title_game", "p_conf_champ", "p_cfp", "backfilled"]
+
+
+def sim_history(con: duckdb.DuckDBPyConnection, season: int, team: str) -> pd.DataFrame:
+    """Season-outlook odds by week; empty (not an error) before the first `psu simulate` that records history."""
+    if not has_table(con, "sim_history"):
+        return pd.DataFrame(columns=HISTORY_VIEW_COLUMNS)
+    return con.execute(
+        f"SELECT {', '.join(HISTORY_VIEW_COLUMNS)} FROM sim_history WHERE season = ? AND team = ? ORDER BY as_of_slate",
+        [season, team],
     ).df()
 
 

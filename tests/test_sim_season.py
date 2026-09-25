@@ -47,6 +47,16 @@ def test_games_are_independent_without_team_draws():
     assert abs(np.corrcoef(margins[:, 0], margins[:, 1])[0, 1]) < 0.02
 
 
+def test_draw_margins_accepts_one_sigma_per_game_and_matches_scalar_when_equal():
+    strengths = np.zeros((4000, 3))
+    pred, home, away = np.zeros(2), np.array([0, 0]), np.array([1, 2])
+    a = draw_margins(pred, home, away, strengths, sigma=SIGMA, tau=0.0, rng=np.random.default_rng(1))
+    b = draw_margins(pred, home, away, strengths, sigma=np.array([SIGMA, SIGMA]), tau=0.0, rng=np.random.default_rng(1))
+    np.testing.assert_array_equal(a, b)  # same seed, same draws
+    c = draw_margins(pred, home, away, strengths, sigma=np.array([1.0, 30.0]), tau=0.0, rng=np.random.default_rng(1))
+    assert c[:, 0].std() == pytest.approx(1.0, rel=0.1) and c[:, 1].std() == pytest.approx(30.0, rel=0.1)
+
+
 def test_matchups_use_each_simulations_own_teams_and_strengths():
     rng = np.random.default_rng(3)
     n = 50_000

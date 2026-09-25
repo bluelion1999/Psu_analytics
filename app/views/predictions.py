@@ -79,6 +79,35 @@ elif summary is not None:
             },
         )
 
+st.subheader("Odds over time")
+history = load_or_note("predictions.sim_history", season, TEAM)
+if history is not None:
+    if history.empty:
+        if summary is not None and int(summary["season"]) == season:
+            st.info("No simulation history yet. Run `psu simulate --backfill` to replay earlier weeks.")
+        else:
+            st.info(f"No simulation history for {season}.")
+    else:
+        labels = {"p_cfp": "CFP", "p_conf_champ": "Big Ten champ", "p_title_game": "Title game"}
+        long = history.melt(id_vars=["as_of_slate"], value_vars=list(labels), var_name="odds", value_name="prob")
+        long["odds"] = long["odds"].map(labels)
+        st.altair_chart(
+            alt.Chart(long)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("as_of_slate:O", title="Before week"),
+                y=alt.Y("prob:Q", title="Probability", axis=alt.Axis(format="%"), scale=alt.Scale(domain=[0, 1])),
+                color=alt.Color("odds:N", title=None),
+                tooltip=["as_of_slate:O", "odds:N", alt.Tooltip("prob:Q", format=".1%")],
+            ),
+            use_container_width=True,
+        )
+        if history["backfilled"].any():
+            st.caption(
+                "Earlier weeks are replays: team ratings as of each week, but model coefficients fitted with "
+                "this season's results in view."
+            )
+
 with st.expander("Next week's FBS games"):
     slate = load_or_note("predictions.next_slate", season)
     if slate is not None:

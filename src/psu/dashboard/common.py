@@ -28,6 +28,7 @@ SOURCES = {
     "sim_team_summary": "psu simulate",
     "sim_win_totals": "psu simulate",
     "sim_conference": "psu simulate",
+    "sim_history": "psu simulate",
 }
 
 

@@ -1,6 +1,7 @@
 import json
 
 import joblib
+import pytest
 from conftest import synthetic_features
 
 from psu.db import connect
@@ -29,10 +30,31 @@ def test_train_and_save_writes_predictions_model_and_report(tmp_path):
     assert model.kind == report["model_kind"]
     saved = json.loads((tmp_path / "reports" / "game_model.json").read_text(encoding="utf-8"))
     assert saved["test_season"] == 2025
+    assert saved["alpha"] == pytest.approx(20.0) and saved["shrink_plays"] == 75
     assert saved["final_train_games"] == len(gp.training_rows(features))
     md = (tmp_path / "reports" / "game_model.md").read_text(encoding="utf-8")
     assert "Vegas" in md and "Penn State" in md
     report_markdown(report).encode("ascii")  # console-safe
+
+
+def test_train_and_save_records_custom_alpha_and_shrink_plays(tmp_path):
+    con = connect(":memory:")
+    report = train_and_save(
+        con, synthetic_features(), current_season=2026, out_dir=tmp_path, alpha=5.0, shrink_plays=10
+    )
+    assert report["alpha"] == pytest.approx(5.0) and report["shrink_plays"] == 10
+    saved = json.loads((tmp_path / "reports" / "game_model.json").read_text(encoding="utf-8"))
+    assert saved["alpha"] == pytest.approx(5.0) and saved["shrink_plays"] == 10
+
+
+def test_saved_model_and_markdown_carry_phase_sigmas(tmp_path):
+    con = connect(":memory:")
+    report = train_and_save(con, synthetic_features(), current_season=2026, out_dir=tmp_path)
+    model = joblib.load(tmp_path / "models" / "game_model.joblib")
+    assert model.sigma_by_phase == report["sigma_by_phase"]
+    text = report_markdown(report)
+    assert "by phase" in text and "## Calibration" in text and "Before the model upgrade" in text
+    assert "| early |" in text
 
 
 def test_final_model_trains_on_every_completed_game_after_the_first_season(tmp_path, monkeypatch):

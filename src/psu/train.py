@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
@@ -11,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from psu.build import _PLAY_COLUMNS
-from psu.config import TEAM
+from psu.config import SHRINK_PLAYS, TEAM, TRAIN_ALPHA
 from psu.features import game_features
 from psu.models import game_predict as gp
 from psu.transform import enrich_plays
@@ -33,19 +34,38 @@ PREDICTION_COLUMNS = [
     "split",
 ]
 
+# 2025 test-season scores before the model upgrade (preseason priors, phase sigmas), kept to show the change.
+BASELINE = {"season": 2025, "model_mae": 12.52, "model_brier": 0.185, "vegas_mae": 11.82, "vegas_brier": 0.175}
 
-def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
+
+@dataclass(frozen=True)
+class FeatureInputs:
+    enriched: pd.DataFrame
+    games: pd.DataFrame
+    lines: pd.DataFrame
+    sp: pd.DataFrame
+    talent: pd.DataFrame
+
+
+def load_feature_inputs(con: duckdb.DuckDBPyConnection) -> FeatureInputs:
     plays = con.execute(f"SELECT {_PLAY_COLUMNS} FROM plays").df()
     games = con.execute(
         "SELECT id, season, week, season_type, start_date, neutral_site, completed, home_team, away_team, "
         "home_classification, away_classification, home_points, away_points FROM games"
     ).df()
     drives = con.execute("SELECT id, offense, start_offense_score, start_defense_score FROM drives").df()
-    lines = con.execute("SELECT game_id, spread FROM lines").df()
-    sp = con.execute("SELECT year, team, rating FROM ratings_sp").df()
-    talent = con.execute("SELECT year, team, talent FROM talent").df()
-    enriched = enrich_plays(plays, games, drives)
-    return game_features(enriched, games, lines, sp, talent, alpha=alpha, shrink_plays=shrink_plays)
+    return FeatureInputs(
+        enriched=enrich_plays(plays, games, drives),
+        games=games,
+        lines=con.execute("SELECT game_id, spread FROM lines").df(),
+        sp=con.execute("SELECT year, team, rating FROM ratings_sp").df(),
+        talent=con.execute("SELECT year, team, talent FROM talent").df(),
+    )
+
+
+def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
+    i = load_feature_inputs(con)
+    return game_features(i.enriched, i.games, i.lines, i.sp, i.talent, alpha=alpha, shrink_plays=shrink_plays)
 
 
 def _fmt(value, digits: int) -> str:
@@ -61,7 +81,16 @@ def report_markdown(report: dict) -> str:
         f"Model: {report['model_kind']} (chosen on {report['validation_season']} validation MAE: {validation}).",
         f"Trained on {seasons}, tested on {report['test_season']}; final model refit on "
         f"{report.get('final_train_games', '?')} completed games.",
-        f"Win probability = NormalCDF(margin / {report['sigma']:.1f}); Vegas uses sigma {report['vegas_sigma']:.1f}.",
+    ]
+    phases = report.get("sigma_by_phase")
+    sigma_text = (
+        "by phase: " + ", ".join(f"{p} {phases[p]:.1f}" for p in ("early", "mid", "post"))
+        if phases
+        else f"{report['sigma']:.1f}"
+    )
+    lines += [
+        f"Win probability = NormalCDF(margin / sigma), sigma {sigma_text}; "
+        f"Vegas uses sigma {report['vegas_sigma']:.1f}.",
         "",
         "| Games | N (lined) | Model MAE | Vegas MAE | Model Brier | Vegas Brier | Model MAE (all games) |",
         "|---|---|---|---|---|---|---|",
@@ -72,6 +101,28 @@ def report_markdown(report: dict) -> str:
             f"| {name} | {lined['n']} | {_fmt(lined['mae'], 2)} | {_fmt(vegas['mae'], 2)} | "
             f"{_fmt(lined['brier'], 3)} | {_fmt(vegas['brier'], 3)} | {_fmt(every['mae'], 2)} (n={every['n']}) |"
         )
+    lines += [
+        "",
+        f"Before the model upgrade ({BASELINE['season']} test, all games): model MAE {BASELINE['model_mae']:.2f}, "
+        f"Brier {BASELINE['model_brier']:.3f}; Vegas MAE {BASELINE['vegas_mae']:.2f}, "
+        f"Brier {BASELINE['vegas_brier']:.3f}.",
+    ]
+    cal = report.get("calibration")
+    if cal:
+        lines += [
+            "",
+            "## Calibration (test season, games with a Vegas line)",
+            "",
+            f"Expected calibration error: model {_fmt(cal['model']['ece'], 3)}, Vegas {_fmt(cal['vegas']['ece'], 3)}.",
+            "",
+            "| Source | Bin | N | Mean predicted | Actual |",
+            "|---|---|---|---|---|",
+        ]
+        for source in ("model", "vegas"):
+            lines += [
+                f"| {source} | {b['bin']:.1f} | {b['n']} | {b['mean_pred']:.3f} | {b['actual']:.3f} |"
+                for b in cal[source]["bins"]
+            ]
     return "\n".join(lines) + "\n"
 
 
@@ -82,11 +133,16 @@ def train_and_save(
     current_season: int,
     out_dir: Path,
     team: str = TEAM,
+    alpha: float = TRAIN_ALPHA,
+    shrink_plays: int = SHRINK_PLAYS,
 ) -> dict:
     report = gp.backtest(features, current_season, team=team)
     train = gp.training_rows(features)
     model = gp.fit(train, report["model_kind"])
+    model.sigma_by_phase = report["sigma_by_phase"]
     report["final_train_games"] = int(len(train))
+    report["alpha"] = alpha
+    report["shrink_plays"] = shrink_plays
 
     predictions = features.copy()
     predictions["pred_margin"] = model.predict_margin(features)

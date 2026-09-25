@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,7 +35,8 @@ class _MedianImputer(BaseEstimator, TransformerMixin):
 
     def fit(self, X, y=None):
         X = np.asarray(X, dtype=float)
-        with np.errstate(invalid="ignore"):
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # nanmedian warns "All-NaN slice" for all-NaN columns
             medians = np.nanmedian(X, axis=0)
         self.statistics_ = np.where(np.isnan(medians), 0.0, medians)
         return self
@@ -69,17 +71,35 @@ def win_prob(margin, sigma: float) -> np.ndarray:
     return norm.cdf(np.asarray(margin, dtype=float) / sigma)
 
 
+PHASES = ("early", "mid", "post")
+EARLY_SLATES = 4  # slates 1-4 lean hardest on the preseason prior
+MIN_PHASE_N = 30
+
+
+def phase_of(season_type, slate) -> np.ndarray:
+    season_type = np.asarray(season_type, dtype=object)
+    slate = np.asarray(slate, dtype=float)
+    return np.where(season_type == "postseason", "post", np.where(slate <= EARLY_SLATES, "early", "mid"))
+
+
 @dataclass
 class GameModel:
     kind: str
     pipeline: Pipeline
     sigma: float
+    sigma_by_phase: dict[str, float] | None = None
 
     def predict_margin(self, df: pd.DataFrame) -> np.ndarray:
         return self.pipeline.predict(df[FEATURES])
 
+    def row_sigma(self, df: pd.DataFrame) -> np.ndarray:
+        if not self.sigma_by_phase or not {"season_type", "slate"} <= set(df.columns):
+            return np.full(len(df), self.sigma, dtype=float)
+        phases = phase_of(df["season_type"], df["slate"])
+        return np.array([self.sigma_by_phase.get(p, self.sigma) for p in phases], dtype=float)
+
     def win_prob(self, df: pd.DataFrame) -> np.ndarray:
-        return win_prob(self.predict_margin(df), self.sigma)
+        return win_prob(self.predict_margin(df), self.row_sigma(df))
 
 
 def fit(train: pd.DataFrame, kind: str) -> GameModel:
@@ -101,6 +121,63 @@ def scores(actual, predicted, prob) -> dict:
         "mae": float(np.mean(np.abs(actual - predicted))),
         "brier": float(np.mean((prob - home_won) ** 2)),
     }
+
+
+def oos_residuals(played: pd.DataFrame, seasons: list[int], kind: str) -> pd.DataFrame:
+    """Walk-forward residuals: each season after the first, predicted by a model fitted on earlier seasons only."""
+    frames = []
+    for season in seasons[1:]:
+        train = played[played["season"].isin([s for s in seasons if s < season])]
+        scored = played[played["season"] == season]
+        if train.empty or scored.empty:
+            continue
+        model = fit(train, kind)
+        frames.append(
+            pd.DataFrame(
+                {
+                    "season": season,
+                    "phase": phase_of(scored["season_type"], scored["slate"]),
+                    "residual": scored["margin"].to_numpy(float) - model.predict_margin(scored),
+                }
+            )
+        )
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["season", "phase", "residual"])
+
+
+def phase_sigmas(residuals: pd.DataFrame, fallback: float, min_n: int = MIN_PHASE_N) -> dict[str, float]:
+    """RMS residual per phase; phases with fewer than min_n residuals use the pooled RMS (or fallback if none)."""
+    r = residuals["residual"].astype(float).to_numpy()
+    pooled = float(np.sqrt(np.mean(r**2))) if len(r) else float(fallback)
+    out = {}
+    for phase in PHASES:
+        rp = r[(residuals["phase"] == phase).to_numpy()]
+        out[phase] = float(np.sqrt(np.mean(rp**2))) if len(rp) >= min_n else pooled
+    return out
+
+
+def reliability(prob, won, bins: int = 10) -> pd.DataFrame:
+    """Equal-width probability bins (labelled by lower edge): count, mean predicted and actual home-win rate."""
+    prob = np.asarray(prob, dtype=float)
+    won = np.asarray(won, dtype=float)
+    edge = np.minimum((prob * bins).astype(int), bins - 1) / bins
+    df = pd.DataFrame({"bin": edge, "prob": prob, "won": won})
+    table = df.groupby("bin").agg(n=("prob", "size"), mean_pred=("prob", "mean"), actual=("won", "mean"))
+    return table.reset_index()[["bin", "n", "mean_pred", "actual"]]
+
+
+def ece(table: pd.DataFrame) -> float | None:
+    """Expected calibration error: bin-size-weighted mean |mean predicted - actual|."""
+    n = table["n"].sum()
+    if n == 0:
+        return None
+    return float((table["n"] * (table["mean_pred"] - table["actual"]).abs()).sum() / n)
+
+
+def _records(table: pd.DataFrame) -> list[dict]:
+    return [
+        {"bin": float(r.bin), "n": int(r.n), "mean_pred": float(r.mean_pred), "actual": float(r.actual)}
+        for r in table.itertuples()
+    ]
 
 
 def usable_seasons(features: pd.DataFrame, current_season: int) -> list[int]:
@@ -138,9 +215,11 @@ def backtest(features: pd.DataFrame, current_season: int, team: str = "Penn Stat
     train, valid = split(validate_season)
     validation = {kind: _score_model(fit(train, kind), valid) for kind in MODEL_KINDS}
     kind = min(MODEL_KINDS, key=lambda k: validation[k]["mae"])
+    residuals = oos_residuals(played, seasons, kind)
 
     train, test = split(test_season)
     model = fit(train, kind)
+    model.sigma_by_phase = phase_sigmas(residuals[residuals["season"] < test_season], model.sigma)
     vegas_sigma = _vegas_sigma(train)
 
     def block(games: pd.DataFrame) -> dict:
@@ -151,7 +230,14 @@ def backtest(features: pd.DataFrame, current_season: int, team: str = "Penn Stat
             "vegas": scores(lined["margin"], lined["vegas_margin"], win_prob(lined["vegas_margin"], vegas_sigma)),
         }
 
+    def calibration(prob, won) -> dict:
+        table = reliability(prob, won)
+        return {"ece": ece(table), "bins": _records(table)}
+
     is_team = test["home_team"].eq(team) | test["away_team"].eq(team)
+    is_early = phase_of(test["season_type"], test["slate"]) == "early"
+    lined = test[test["vegas_margin"].notna()]
+    won = (lined["margin"] > 0).astype(float).to_numpy()
     return {
         "model_kind": kind,
         "validation_season": validate_season,
@@ -159,6 +245,11 @@ def backtest(features: pd.DataFrame, current_season: int, team: str = "Penn Stat
         "test_season": test_season,
         "train_seasons": [s for s in seasons if s < test_season],
         "sigma": model.sigma,
+        "sigma_by_phase": phase_sigmas(residuals, model.sigma),
         "vegas_sigma": vegas_sigma,
-        "test": {"all": block(test), team: block(test[is_team])},
+        "test": {"all": block(test), "early": block(test[is_early]), team: block(test[is_team])},
+        "calibration": {
+            "model": calibration(model.win_prob(lined), won),
+            "vegas": calibration(win_prob(lined["vegas_margin"], vegas_sigma), won),
+        },
     }

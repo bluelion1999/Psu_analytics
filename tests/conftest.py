@@ -110,6 +110,8 @@ class FakeCFBD:
             return [{"year": y, "team": "Penn State", "talent": 850.0}]
         if endpoint == "recruiting":
             return [{"year": y, "team": "Penn State", "rank": 10, "points": 280.0}]
+        if endpoint == "returning_production":
+            return [{"season": y, "team": "Penn State", "conference": "Big Ten", "percentPPA": 0.6, "usage": 0.55}]
         raise AssertionError(f"unexpected endpoint {endpoint}")
 
 
@@ -242,6 +244,7 @@ def synthetic_features(seed=0, games_per_season=240):
                     "game_id": game_id,
                     "season": season,
                     "week": 1 + i % 15,
+                    "slate": 1 + i % 15,
                     "season_type": "regular",
                     "home_team": str(home),
                     "away_team": str(away),

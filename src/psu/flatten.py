@@ -115,5 +115,6 @@ FLATTENERS: dict[str, Flattener] = {
     "ratings_sp": flatten_wide,
     "talent": flatten_wide,
     "recruiting": flatten_wide,
+    "returning_production": flatten_wide,
     "lines": flatten_lines,
 }
