@@ -7,6 +7,7 @@ would have said at the time.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -69,18 +70,25 @@ def simulate_as_of(
     tau: float,
     now: pd.Timestamp | None = None,
 ) -> list[SimResult]:
-    """One simulation per finished week N (1 .. current - 1), from predict(N) and the games as of N."""
+    """One simulation per finished week N (1 .. current - 1), from predict(N) and the games as of N.
+
+    A replay's as-of week is N by definition, regardless of what `current_slate` would infer from
+    `now` applied to the reopened (unfinished) later games.
+    """
     return [
-        run_simulation(
-            replay_games(games, n),
-            predict(n),
-            season=season,
-            sigma=sigma,
-            team=team,
-            n_sims=n_sims,
-            seed=seed,
-            tau=tau,
-            now=now,
+        dataclasses.replace(
+            run_simulation(
+                replay_games(games, n),
+                predict(n),
+                season=season,
+                sigma=sigma,
+                team=team,
+                n_sims=n_sims,
+                seed=seed,
+                tau=tau,
+                now=now,
+            ),
+            as_of_slate=n,
         )
         for n in range(1, current_slate(games, season, now=now))
     ]

@@ -5,7 +5,7 @@ import pytest
 from conftest import synthetic_league
 
 from psu.backfill import _check_model_features, replay_games, simulate_as_of
-from psu.simulate import MissingModel
+from psu.simulate import MissingModel, current_slate
 
 NOW = pd.Timestamp(2026, 9, 2)  # just after synthetic_league's played games; keeps every open week within the grace
 
@@ -52,6 +52,33 @@ def test_simulate_as_of_replays_each_finished_week():
     # As of week 1, B's loss to A hasn't happened yet, so B can still win all three of its games.
     totals = results[0].win_totals
     assert totals.loc[totals["wins"] == totals["wins"].max(), "prob"].item() > 0
+
+
+def test_simulate_as_of_labels_each_replay_with_its_own_week_even_when_now_is_far_in_the_future():
+    """A stale wall clock must not make current_slate's staleness rule relabel replayed weeks.
+
+    With `now` far past every fixture date, current_slate on the reopened games for week n would treat
+    weeks n..last-1 as cancelled and jump the label to the real current week; each replay's as_of_slate
+    must instead be n by definition.
+    """
+    games, _ = synthetic_league()
+    now = pd.Timestamp("2027-06-01")
+    last_slate = current_slate(games, 2026, now=now)
+
+    results = simulate_as_of(
+        games,
+        lambda n: all_predictions(games),
+        season=2026,
+        sigma=16.0,
+        team="B",
+        n_sims=50,
+        seed=0,
+        tau=0.1,
+        now=now,
+    )
+    expected = list(range(1, last_slate))
+    assert [r.as_of_slate for r in results] == expected
+    assert len({r.as_of_slate for r in results}) == len(results)
 
 
 def test_backfill_before_any_games_writes_nothing():
