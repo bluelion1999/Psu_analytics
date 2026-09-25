@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from psu.adjust import opponent_adjust
+from psu.priors import empty_returning, project_prior, projection_pairs, returning_pct, season_projections
 
 MAX_REST = 21
 RATING_COLUMNS = ["off_epa", "def_epa", "off_sr", "def_sr"]
@@ -72,16 +73,29 @@ def rolling_ratings(
     *,
     alpha: float,
     shrink_plays: int,
+    returning: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Ratings for each team as of the start of each slate, blended with last season's final ratings."""
+    """Ratings for each team as of the start of each slate, blended with a projected prior from last season."""
+    returning = empty_returning() if returning is None else returning
     slates = slate_index(games)
     plays = enriched.merge(slates.rename(columns={"id": "game_id"})[["game_id", "slate"]], on="game_id")
+    seasons = [int(s) for s in sorted(slates["season"].unique())]
+    by_season = {s: plays[plays["season"] == s] for s in seasons}
+    finals = {s: season_ratings(p, alpha) for s, p in by_season.items() if not p.empty}
+    means = {s: league_means(p) for s, p in by_season.items() if not p.empty}
+    pairs = {c: projection_pairs(finals, means, returning, c) for c in RATING_COLUMNS}
+    no_means = {"epa": np.nan, "sr": np.nan}
     frames = []
-    for season in sorted(slates["season"].unique()):
-        previous = plays[plays["season"] == season - 1]
-        prior = season_ratings(previous, alpha)
-        means = league_means(previous) if not previous.empty else {"epa": np.nan, "sr": np.nan}
-        this_season = plays[plays["season"] == season]
+    for season in seasons:
+        last = finals.get(season - 1)
+        season_means = means.get(season - 1, no_means)
+        if last is None:
+            prior = season_ratings(plays.iloc[:0], alpha)
+        else:
+            prior = project_prior(
+                last, season_means, returning_pct(returning, season, last.index), season_projections(pairs, season)
+            )
+        this_season = by_season[season]
         season_games = games[games["season"] == season].merge(slates[["id", "slate"]], on="id")
         for slate, slate_games in season_games.groupby("slate"):
             teams = pd.Index(sorted(set(slate_games["home_team"]) | set(slate_games["away_team"])), name="team")
@@ -92,7 +106,7 @@ def rolling_ratings(
                 side, kind = column.split("_")
                 n = current[f"{side}_plays"].astype(float).fillna(0.0)
                 weight = (n / (n + shrink_plays)).fillna(0.0)
-                p = prior_now[column].astype(float).fillna(means[kind])
+                p = prior_now[column].astype(float).fillna(season_means[kind])
                 c = current[column].astype(float)
                 blended = weight * c.fillna(0.0) + (1 - weight) * p
                 out[column] = blended.where(p.notna(), c)
@@ -103,7 +117,17 @@ def rolling_ratings(
     return pd.concat(frames, ignore_index=True)
 
 
-FEATURES = ["home_field", "d_off_epa", "d_def_epa", "d_off_sr", "d_def_sr", "d_prior_sp", "d_talent", "d_rest"]
+FEATURES = [
+    "home_field",
+    "d_off_epa",
+    "d_def_epa",
+    "d_off_sr",
+    "d_def_sr",
+    "d_prior_sp",
+    "d_talent",
+    "d_rest",
+    "d_returning",
+]
 GAME_COLUMNS = [
     "game_id",
     "season",
@@ -122,22 +146,21 @@ GAME_COLUMNS = [
 ]
 
 
-def game_features(
-    enriched: pd.DataFrame,
+def assemble_features(
+    ratings: pd.DataFrame,
     games: pd.DataFrame,
     lines: pd.DataFrame,
     sp: pd.DataFrame,
     talent: pd.DataFrame,
-    *,
-    alpha: float,
-    shrink_plays: int,
+    returning: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """One row per FBS-vs-FBS game: pregame home-minus-away features, the Vegas margin, and the result."""
-    ratings = rolling_ratings(enriched, games, alpha=alpha, shrink_plays=shrink_plays)
+    """One row per FBS-vs-FBS game from precomputed slate ratings: home-minus-away features, Vegas, result."""
+    returning = empty_returning() if returning is None else returning
     g = games[(games["home_classification"] == "fbs") & (games["away_classification"] == "fbs")]
     g = g.merge(slate_index(games)[["id", "slate"]], on="id")
     prior_sp = sp.assign(season=sp["year"] + 1)[["season", "team", "rating"]]
     season_talent = talent.rename(columns={"year": "season"})[["season", "team", "talent"]]
+    season_returning = returning[["season", "team", "percent_ppa"]].drop_duplicates(["season", "team"])
     for side in ("home", "away"):
         team = f"{side}_team"
         g = g.merge(
@@ -151,6 +174,11 @@ def game_features(
         g = g.merge(
             season_talent.rename(columns={"team": team, "talent": f"{side}_talent"}), on=["season", team], how="left"
         )
+        g = g.merge(
+            season_returning.rename(columns={"team": team, "percent_ppa": f"{side}_returning"}),
+            on=["season", team],
+            how="left",
+        )
     g = g.merge(rest_days(games), on="id", how="left")
     g = g.merge(vegas_margin(lines).rename(columns={"game_id": "id"}), on="id", how="left")
     g["home_field"] = (~g["neutral_site"].eq(True)).astype(int)
@@ -159,5 +187,22 @@ def game_features(
     g["d_prior_sp"] = g["home_prior_sp"] - g["away_prior_sp"]
     g["d_talent"] = g["home_talent"] - g["away_talent"]
     g["d_rest"] = g["home_rest"] - g["away_rest"]
+    g["d_returning"] = g["home_returning"].astype(float) - g["away_returning"].astype(float)
     g["margin"] = np.where(g["completed"].eq(True), g["home_points"] - g["away_points"], np.nan)
     return g.rename(columns={"id": "game_id"})[GAME_COLUMNS + FEATURES].reset_index(drop=True)
+
+
+def game_features(
+    enriched: pd.DataFrame,
+    games: pd.DataFrame,
+    lines: pd.DataFrame,
+    sp: pd.DataFrame,
+    talent: pd.DataFrame,
+    *,
+    alpha: float,
+    shrink_plays: int,
+    returning: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """One row per FBS-vs-FBS game: pregame home-minus-away features, the Vegas margin, and the result."""
+    ratings = rolling_ratings(enriched, games, alpha=alpha, shrink_plays=shrink_plays, returning=returning)
+    return assemble_features(ratings, games, lines, sp, talent, returning)

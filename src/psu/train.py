@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
@@ -14,6 +15,7 @@ from psu.build import _PLAY_COLUMNS
 from psu.config import TEAM
 from psu.features import game_features
 from psu.models import game_predict as gp
+from psu.priors import empty_returning
 from psu.transform import enrich_plays
 
 PREDICTION_COLUMNS = [
@@ -34,18 +36,47 @@ PREDICTION_COLUMNS = [
 ]
 
 
-def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
+@dataclass(frozen=True)
+class FeatureInputs:
+    enriched: pd.DataFrame
+    games: pd.DataFrame
+    lines: pd.DataFrame
+    sp: pd.DataFrame
+    talent: pd.DataFrame
+    returning: pd.DataFrame
+
+
+def _returning(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    exists = con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name = 'returning_production'"
+    ).fetchone()[0]
+    if not exists:
+        return empty_returning()  # database built before returning production was ingested
+    return con.execute("SELECT season, team, percent_ppa FROM returning_production").df()
+
+
+def load_feature_inputs(con: duckdb.DuckDBPyConnection) -> FeatureInputs:
     plays = con.execute(f"SELECT {_PLAY_COLUMNS} FROM plays").df()
     games = con.execute(
         "SELECT id, season, week, season_type, start_date, neutral_site, completed, home_team, away_team, "
         "home_classification, away_classification, home_points, away_points FROM games"
     ).df()
     drives = con.execute("SELECT id, offense, start_offense_score, start_defense_score FROM drives").df()
-    lines = con.execute("SELECT game_id, spread FROM lines").df()
-    sp = con.execute("SELECT year, team, rating FROM ratings_sp").df()
-    talent = con.execute("SELECT year, team, talent FROM talent").df()
-    enriched = enrich_plays(plays, games, drives)
-    return game_features(enriched, games, lines, sp, talent, alpha=alpha, shrink_plays=shrink_plays)
+    return FeatureInputs(
+        enriched=enrich_plays(plays, games, drives),
+        games=games,
+        lines=con.execute("SELECT game_id, spread FROM lines").df(),
+        sp=con.execute("SELECT year, team, rating FROM ratings_sp").df(),
+        talent=con.execute("SELECT year, team, talent FROM talent").df(),
+        returning=_returning(con),
+    )
+
+
+def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
+    i = load_feature_inputs(con)
+    return game_features(
+        i.enriched, i.games, i.lines, i.sp, i.talent, alpha=alpha, shrink_plays=shrink_plays, returning=i.returning
+    )
 
 
 def _fmt(value, digits: int) -> str:
