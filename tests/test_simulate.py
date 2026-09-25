@@ -171,3 +171,19 @@ def test_unknown_team_is_a_value_error():
 def test_negative_tau_raises_before_any_draw():
     with pytest.raises(ValueError, match="tau"):
         run(tau=-1)
+
+
+def test_phase_sigmas_equal_to_a_scalar_give_identical_results():
+    a = run(sigma=SIGMA, seed=2)
+    b = run(sigma={"early": SIGMA, "mid": SIGMA, "post": SIGMA}, seed=2)
+    pd.testing.assert_frame_equal(a.win_totals, b.win_totals)
+    pd.testing.assert_frame_equal(a.conference, b.conference)
+
+
+def test_bad_tau_for_any_phase_fails_fast():
+    with pytest.raises(ValueError, match="tau"):
+        run(sigma={"early": 3.0, "mid": SIGMA, "post": SIGMA}, tau=5.0)
+
+
+def test_as_of_slate_is_the_first_unfinished_week():
+    assert run().as_of_slate == 2  # synthetic league: week 1 played, week 2 onward open

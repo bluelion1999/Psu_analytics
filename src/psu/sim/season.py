@@ -19,11 +19,15 @@ def draw_strengths(n_sims: int, n_teams: int, tau: float, rng: np.random.Generat
 
 
 def draw_margins(
-    pred_margin, home_idx, away_idx, strengths: np.ndarray, *, sigma: float, tau: float, rng: np.random.Generator
+    pred_margin, home_idx, away_idx, strengths: np.ndarray, *, sigma, tau: float, rng: np.random.Generator
 ) -> np.ndarray:
-    """Home-minus-away margins, shape (n_sims, n_games): every simulation plays every game."""
-    s = game_noise_sd(sigma, tau)
+    """Home-minus-away margins, shape (n_sims, n_games): every simulation plays every game.
+
+    sigma is one value or one per game; equal values give the same draws as a single scalar.
+    """
     pred = np.asarray(pred_margin, dtype=float)
+    per_game = np.broadcast_to(np.asarray(sigma, dtype=float), pred.shape)
+    s = np.array([game_noise_sd(float(v), tau) for v in per_game.ravel()]).reshape(pred.shape)
     noise = rng.normal(0.0, s, size=(strengths.shape[0], pred.size))
     return pred + strengths[:, home_idx] - strengths[:, away_idx] + noise
 

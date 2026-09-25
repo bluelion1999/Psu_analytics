@@ -14,7 +14,7 @@ from psu import config, db
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import IngestResult, ingest
-from psu.simulate import MissingModel, SimResult, load_sigma, simulate_season, write_results
+from psu.simulate import MissingModel, SimResult, load_sigmas, simulate_season, write_results
 from psu.simulate import report_markdown as sim_report
 from psu.train import load_features, report_markdown, train_and_save
 from psu.transform import GarbageTime
@@ -140,7 +140,7 @@ def _simulate(
     settings: config.Settings, *, team: str, n_sims: int, seed: int, tau: float
 ) -> tuple[int, SimResult | None]:
     try:
-        sigma = load_sigma(settings.db_path.parent)
+        sigma = load_sigmas(settings.db_path.parent)
         con = db.connect(settings.db_path)
         try:
             result = simulate_season(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import pandas as pd
 
 from psu.build import _write
 from psu.config import TEAM
+from psu.models.game_predict import PHASES, phase_of
 from psu.sim.ratings import fit_ratings
 from psu.sim.season import draw_margins, draw_matchups, draw_strengths, game_noise_sd
 from psu.sim.standings import top_two
@@ -41,10 +43,20 @@ class SimResult:
     p_cfp: float
     win_totals: pd.DataFrame
     conference: pd.DataFrame
+    as_of_slate: int = 1
 
 
 def makes_cfp(losses, champion, max_losses: int = 2) -> np.ndarray:
     return np.asarray(champion, dtype=bool) | (np.asarray(losses) <= max_losses)
+
+
+def current_slate(games: pd.DataFrame, season: int) -> int:
+    """First regular-season week with an unfinished game (one past the last week once all are played)."""
+    regular = games[(games["season"] == season) & (games["season_type"] == "regular")]
+    open_weeks = regular.loc[~regular["completed"].fillna(False).astype(bool), "week"]
+    if len(open_weeks):
+        return int(open_weeks.min())
+    return int(regular["week"].max()) + 1 if len(regular) else 1
 
 
 def run_simulation(
@@ -52,7 +64,7 @@ def run_simulation(
     predictions: pd.DataFrame,
     *,
     season: int,
-    sigma: float,
+    sigma: float | Mapping[str, float],
     team: str = TEAM,
     n_sims: int = 10_000,
     seed: int = 0,
@@ -63,7 +75,9 @@ def run_simulation(
 ) -> SimResult:
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
-    game_noise_sd(sigma, tau)  # fail fast on a bad tau, before any draw
+    sigmas = {p: float(sigma[p]) for p in PHASES} if isinstance(sigma, Mapping) else dict.fromkeys(PHASES, float(sigma))
+    for value in sigmas.values():
+        game_noise_sd(value, tau)  # fail fast on a bad tau, before any draw
     rng = np.random.default_rng(seed)
     season_games = games[games["season"] == season]
     regular_all = season_games[season_games["season_type"] == "regular"]
@@ -111,12 +125,14 @@ def run_simulation(
     done = relevant.loc[completed]
     home_win[:, completed] = done["home_points"].to_numpy(float) > done["away_points"].to_numpy(float)
     if predicted.any():
+        rows = relevant.loc[predicted]
+        game_sigma = np.array([sigmas[p] for p in phase_of(rows["season_type"], rows["week"])])
         margins = draw_margins(
-            relevant.loc[predicted, "pred_margin"].to_numpy(float),
+            rows["pred_margin"].to_numpy(float),
             home[predicted],
             away[predicted],
             strengths,
-            sigma=sigma,
+            sigma=game_sigma,
             tau=tau,
             rng=rng,
         )
@@ -187,7 +203,7 @@ def run_simulation(
             member_team[first],
             member_team[second],
             strengths,
-            sigma=sigma,
+            sigma=sigmas["mid"],
             tau=tau,
             rng=rng,
         )
@@ -226,6 +242,7 @@ def run_simulation(
                 "p_conf_champ": np.bincount(champion, minlength=n_members) / n_sims,
             }
         ),
+        as_of_slate=current_slate(games, season),
     )
 
 
@@ -246,6 +263,60 @@ SUMMARY_COLUMNS = [
     "p_conf_champ",
     "p_cfp",
 ]
+HISTORY_COLUMNS = [
+    "season",
+    "as_of_slate",
+    "team",
+    "run_at",
+    "mean_wins",
+    "p_10_plus",
+    "p_title_game",
+    "p_conf_champ",
+    "p_cfp",
+    "backfilled",
+]
+_HISTORY_DDL = (
+    "CREATE TABLE IF NOT EXISTS sim_history (season INTEGER, as_of_slate INTEGER, team VARCHAR, run_at TIMESTAMP, "
+    "mean_wins DOUBLE, p_10_plus DOUBLE, p_title_game DOUBLE, p_conf_champ DOUBLE, p_cfp DOUBLE, backfilled BOOLEAN)"
+)
+
+
+def history_rows(results: list[SimResult], *, backfilled: bool, run_at: pd.Timestamp | None = None) -> pd.DataFrame:
+    run_at = pd.Timestamp.now().floor("s") if run_at is None else run_at
+    return pd.DataFrame(
+        [
+            {
+                "season": r.season,
+                "as_of_slate": r.as_of_slate,
+                "team": r.team,
+                "run_at": run_at,
+                "mean_wins": r.mean_wins,
+                "p_10_plus": r.p_10_plus,
+                "p_title_game": r.p_title_game,
+                "p_conf_champ": r.p_conf_champ,
+                "p_cfp": r.p_cfp,
+                "backfilled": backfilled,
+            }
+            for r in results
+        ],
+        columns=HISTORY_COLUMNS,
+    )
+
+
+def write_history(con: duckdb.DuckDBPyConnection, rows: pd.DataFrame) -> None:
+    """Upsert on (season, as_of_slate, team): a re-run of the same week replaces that week's row."""
+    if rows.empty:
+        return
+    con.execute(_HISTORY_DDL)
+    con.register("_history", rows[HISTORY_COLUMNS])
+    try:
+        con.execute(
+            "DELETE FROM sim_history WHERE EXISTS (SELECT 1 FROM _history n WHERE n.season = sim_history.season "
+            "AND n.as_of_slate = sim_history.as_of_slate AND n.team = sim_history.team)"
+        )
+        con.execute(f"INSERT INTO sim_history SELECT {', '.join(HISTORY_COLUMNS)} FROM _history")
+    finally:
+        con.unregister("_history")
 
 
 def load_inputs(con: duckdb.DuckDBPyConnection, season: int) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -260,22 +331,25 @@ def load_inputs(con: duckdb.DuckDBPyConnection, season: int) -> tuple[pd.DataFra
     return games, predictions
 
 
-def load_sigma(out_dir: Path) -> float:
+def load_sigmas(out_dir: Path) -> dict[str, float]:
+    """Per-phase win-probability sigmas from the model report; older reports fall back to the pooled sigma."""
     path = Path(out_dir) / "reports" / "game_model.json"
     if not path.exists():
         raise MissingModel(f"{path} not found; run `psu train` first")
     try:
-        sigma = json.loads(path.read_text(encoding="utf-8"))["sigma"]
-    except (json.JSONDecodeError, KeyError) as e:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        pooled = float(report["sigma"])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         raise MissingModel(f"{path} has no usable sigma; run `psu train` first") from e
-    return float(sigma)
+    by_phase = report.get("sigma_by_phase") or {}
+    return {p: float(by_phase.get(p, pooled)) for p in PHASES}
 
 
 def simulate_season(
     con: duckdb.DuckDBPyConnection,
     *,
     season: int,
-    sigma: float,
+    sigma: float | Mapping[str, float],
     team: str = TEAM,
     n_sims: int = 10_000,
     seed: int = 0,
@@ -362,6 +436,7 @@ def write_results(con: duckdb.DuckDBPyConnection, result: SimResult, out_dir: Pa
                 ["season", "team", "mean_conf_wins", "p_title_game", "p_conf_champ"]
             ],
         )
+        write_history(con, history_rows([result], backfilled=False))
     except Exception:
         con.execute("ROLLBACK")
         raise
