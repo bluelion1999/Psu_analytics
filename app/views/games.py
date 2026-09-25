@@ -5,8 +5,8 @@ import streamlit as st
 
 from psu.config import TEAM
 from psu.dashboard.common import db_path
-from psu.dashboard.ui import load_or_note, load_or_stop, season_picker
-from psu.simulate import MissingModel, load_sigma
+from psu.dashboard.ui import load, load_or_note, load_or_stop, season_picker
+from psu.simulate import MissingModel, load_sigmas
 
 season = season_picker()
 st.title("Game explorer")
@@ -47,7 +47,7 @@ with drive_col:
 
 st.subheader("Win probability")
 try:
-    sigma = load_sigma(db_path().parent)
+    sigma = load_sigmas(db_path().parent)[load("games.game_phase", game_id)]
 except MissingModel as e:
     st.info(str(e))
 else:
