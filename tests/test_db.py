@@ -109,3 +109,14 @@ def test_new_declared_columns_are_added_to_an_existing_table(con):
 
     got = rows(con, "SELECT id, a, b FROM mig ORDER BY id")
     assert got == [(1, "x", None), (2, "y", 42)]
+
+
+def test_returning_production_round_trip(con):
+    spec = SPECS["returning_production"]
+    assert spec.key == ("season", "team")
+    df = pd.DataFrame({"season": [2025], "team": ["Penn State"], "percent_ppa": [0.62], "total_ppa": [140.0]})
+    upsert(con, spec, df)
+    upsert(con, spec, df.assign(percent_ppa=0.7))  # same key: replaced, not duplicated
+    assert rows(con, "SELECT season, team, percent_ppa, total_ppa FROM returning_production") == [
+        (2025, "Penn State", 0.7, 140.0)
+    ]

@@ -52,7 +52,7 @@ def test_ingest_success_reports_calls_and_counts(settings, capsys, monkeypatch, 
     monkeypatch.setattr(cli, "make_fetch", lambda s: fake_cfbd)
     assert cli.main(["ingest", "--seasons", "2024"]) == 0
     out = capsys.readouterr().out
-    assert "API calls this run: 17" in out
+    assert "API calls this run: 18" in out
     assert "plays" in out
 
 

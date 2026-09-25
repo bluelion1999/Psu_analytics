@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 
 WEEKLY_ENDPOINTS = ("plays", "team_game_stats", "player_game_stats")
 GAME_SEASON_TYPES = ("regular", "postseason")
-SLOW_REFRESH = timedelta(days=7)  # talent, recruiting and the calendar change rarely
+SLOW_ENDPOINTS = ("talent", "recruiting", "returning_production")  # change at most a few times a year
+SLOW_REFRESH = timedelta(days=7)  # talent, recruiting, returning_production and the calendar change rarely
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ def season_requests(season: int) -> list[tuple[str, dict[str, Any]]]:
         ("ratings_sp", {"year": season}),
         ("talent", {"year": season}),
         ("recruiting", {"year": season}),
+        ("returning_production", {"year": season}),
     ]
 
 
@@ -115,7 +117,7 @@ def ingest(
         calendar = client.get("calendar", {"year": season}, max_age=calendar_max_age).data
         season_final_at = _season_final_at(calendar, final_after)
         requests = [
-            Request(e, p, SLOW_REFRESH if e in ("talent", "recruiting") else refresh_after, season_final_at)
+            Request(e, p, SLOW_REFRESH if e in SLOW_ENDPOINTS else refresh_after, season_final_at)
             for e, p in season_requests(season)
         ]
         requests += weekly_requests(season, calendar, now=now, final_after=final_after, refresh_after=refresh_after)

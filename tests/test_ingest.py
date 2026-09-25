@@ -5,7 +5,7 @@ from psu.client import CachedClient
 from psu.ingest import ingest
 
 NOW = datetime(2026, 9, 22, 12, tzinfo=UTC)
-SEASON_LEVEL = 7  # games, drives, lines, advanced_season, ratings_sp, talent, recruiting
+SEASON_LEVEL = 8  # games, drives, lines, advanced_season, ratings_sp, talent, recruiting, returning_production
 WEEKLY = 3  # plays, team_game_stats, player_game_stats
 
 
@@ -42,9 +42,10 @@ def test_current_season_skips_future_weeks_and_refreshes_only_live_data(tmp_path
     refetched = {(e, p.get("week")) for e, p in fake_cfbd.calls}
     assert ("plays", 1) not in refetched  # week 1 ended more than 3 days ago: final
     assert ("plays", 4) in refetched  # week 4 is still in progress
-    # talent, recruiting and the calendar use the 7-day slow-refresh window, so they're not refetched:
-    # games, drives, lines, advanced_season, ratings_sp + week 4's three weekly endpoints.
+    # talent, recruiting, returning_production, and calendar use the 7-day slow-refresh window
+    # not refetched: games, drives, lines, advanced_season, ratings_sp + week 4's three weekly endpoints.
     assert second.api_calls == 5 + WEEKLY
+    assert "returning_production" not in {e for e, _ in fake_cfbd.calls}  # slow refresh, like talent
     assert second.row_counts["plays"] == first.row_counts["plays"]
 
 

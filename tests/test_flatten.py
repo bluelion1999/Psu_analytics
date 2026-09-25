@@ -145,3 +145,14 @@ def test_missing_nested_lists_produce_no_rows():
     assert flatten_player_game_stats([{"id": 9}], ctx).empty
     assert flatten_lines([{"id": 9, "lines": []}], {"year": 2014}).empty
     assert flatten_plays([], ctx).empty
+
+
+def test_returning_production_flattens_to_snake_case():
+    from psu.flatten import FLATTENERS
+
+    df = FLATTENERS["returning_production"](
+        [{"season": 2025, "team": "Penn State", "conference": "Big Ten", "percentPPA": 0.62, "totalPassingPPA": 80.5}],
+        {"year": 2025},
+    )
+    assert df.loc[0, "season"] == 2025 and df.loc[0, "percent_ppa"] == 0.62
+    assert df.loc[0, "total_passing_ppa"] == 80.5

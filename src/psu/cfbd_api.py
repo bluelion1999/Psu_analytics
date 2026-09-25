@@ -24,6 +24,7 @@ ENDPOINTS: dict[str, tuple[str, str]] = {
     "ratings_sp": ("RatingsApi", "get_sp"),
     "talent": ("TeamsApi", "get_talent"),
     "recruiting": ("RecruitingApi", "get_team_recruiting_rankings"),
+    "returning_production": ("PlayersApi", "get_returning_production"),
     "lines": ("BettingApi", "get_lines"),
 }
 
