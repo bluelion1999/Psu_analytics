@@ -35,6 +35,9 @@ PREDICTION_COLUMNS = [
     "split",
 ]
 
+# 2025 test-season scores before the model upgrade (preseason priors, phase sigmas), kept to show the change.
+BASELINE = {"model_mae": 12.52, "model_brier": 0.185, "vegas_mae": 11.82, "vegas_brier": 0.175}
+
 
 @dataclass(frozen=True)
 class FeatureInputs:
@@ -92,7 +95,16 @@ def report_markdown(report: dict) -> str:
         f"Model: {report['model_kind']} (chosen on {report['validation_season']} validation MAE: {validation}).",
         f"Trained on {seasons}, tested on {report['test_season']}; final model refit on "
         f"{report.get('final_train_games', '?')} completed games.",
-        f"Win probability = NormalCDF(margin / {report['sigma']:.1f}); Vegas uses sigma {report['vegas_sigma']:.1f}.",
+    ]
+    phases = report.get("sigma_by_phase")
+    sigma_text = (
+        "by phase: " + ", ".join(f"{p} {phases[p]:.1f}" for p in ("early", "mid", "post"))
+        if phases
+        else f"{report['sigma']:.1f}"
+    )
+    lines += [
+        f"Win probability = NormalCDF(margin / sigma), sigma {sigma_text}; "
+        f"Vegas uses sigma {report['vegas_sigma']:.1f}.",
         "",
         "| Games | N (lined) | Model MAE | Vegas MAE | Model Brier | Vegas Brier | Model MAE (all games) |",
         "|---|---|---|---|---|---|---|",
@@ -103,6 +115,28 @@ def report_markdown(report: dict) -> str:
             f"| {name} | {lined['n']} | {_fmt(lined['mae'], 2)} | {_fmt(vegas['mae'], 2)} | "
             f"{_fmt(lined['brier'], 3)} | {_fmt(vegas['brier'], 3)} | {_fmt(every['mae'], 2)} (n={every['n']}) |"
         )
+    lines += [
+        "",
+        f"Before the model upgrade ({report['test_season']} test, all games): model MAE {BASELINE['model_mae']:.2f}, "
+        f"Brier {BASELINE['model_brier']:.3f}; Vegas MAE {BASELINE['vegas_mae']:.2f}, "
+        f"Brier {BASELINE['vegas_brier']:.3f}.",
+    ]
+    cal = report.get("calibration")
+    if cal:
+        lines += [
+            "",
+            "## Calibration (test season, games with a Vegas line)",
+            "",
+            f"Expected calibration error: model {_fmt(cal['model']['ece'], 3)}, Vegas {_fmt(cal['vegas']['ece'], 3)}.",
+            "",
+            "| Source | Bin | N | Mean predicted | Actual |",
+            "|---|---|---|---|---|",
+        ]
+        for source in ("model", "vegas"):
+            lines += [
+                f"| {source} | {b['bin']:.1f} | {b['n']} | {b['mean_pred']:.3f} | {b['actual']:.3f} |"
+                for b in cal[source]["bins"]
+            ]
     return "\n".join(lines) + "\n"
 
 
@@ -117,6 +151,7 @@ def train_and_save(
     report = gp.backtest(features, current_season, team=team)
     train = gp.training_rows(features)
     model = gp.fit(train, report["model_kind"])
+    model.sigma_by_phase = report["sigma_by_phase"]
     report["final_train_games"] = int(len(train))
 
     predictions = features.copy()

@@ -55,6 +55,16 @@ def test_load_feature_inputs_without_returning_table():
     assert list(inputs.returning.columns) == ["season", "team", "percent_ppa"] and inputs.returning.empty
 
 
+def test_saved_model_and_markdown_carry_phase_sigmas(tmp_path):
+    con = connect(":memory:")
+    report = train_and_save(con, synthetic_features(), current_season=2026, out_dir=tmp_path)
+    model = joblib.load(tmp_path / "models" / "game_model.joblib")
+    assert model.sigma_by_phase == report["sigma_by_phase"]
+    text = report_markdown(report)
+    assert "by phase" in text and "## Calibration" in text and "Before the model upgrade" in text
+    assert "| early |" in text
+
+
 def test_final_model_trains_on_every_completed_game_after_the_first_season(tmp_path, monkeypatch):
     seen = []
     real_fit = gp.fit

@@ -244,6 +244,7 @@ def synthetic_features(seed=0, games_per_season=240):
                     "game_id": game_id,
                     "season": season,
                     "week": 1 + i % 15,
+                    "slate": 1 + i % 15,
                     "season_type": "regular",
                     "home_team": str(home),
                     "away_team": str(away),
