@@ -19,7 +19,7 @@ Out of scope: new model families, and priors for 2022, which keeps the `no_prior
 
 ### Data
 - A new CFBD endpoint, `returning` (`PlayersApi.get_returning_production`, `/player/returning`), is added to `cfbd_api.py` and requested once per season in `ingest.py`. Like talent and recruiting, it uses `SLOW_REFRESH`.
-- New table `returning_production`, key `(year, team)`, with columns `percent_ppa`, `percent_passing_ppa`, `percent_receiving_ppa`, `percent_rushing_ppa`, `usage` (all DOUBLE) and `conference` (VARCHAR).
+- New table `returning_production`, key `(season, team)` (CFBD returns `season` for this endpoint, not `year`), with columns `percent_ppa`, `percent_passing_ppa`, `percent_receiving_ppa`, `percent_rushing_ppa`, `usage` (all DOUBLE) and `conference` (VARCHAR).
 - Backfilling 2022–2026 costs 5 API calls.
 
 ### Projection
@@ -32,8 +32,8 @@ A new module, `src/psu/priors.py`:
 - `project_prior(last_final, means, returning_pct, coefs)` returns
   `prior = mean + (b0 + b1·ret)·(last − mean)`, where `ret` falls back to the league-median `percent_ppa` when a team has no row.
 - **No leakage:** coefficients for season S are fitted only on pairs whose `next` season is before S.
-  - With no pairs available (the 2023 prior, since 2022 is the first season), the fallback is `b0 = 0.6`, `b1 = 0`.
-  - Coefficients are clipped to keep `b0 + b1·ret` within [0, 1].
+  - With fewer than 20 pairs (for example the 2023 prior, since 2022 is the first season), the fallback is `b0 = 0.6`, `b1 = 0`.
+  - The factor `b0 + b1·ret` is clipped to [0, 1] when it is applied.
 
 `features.rolling_ratings` uses the projected prior instead of the raw prior-season ratings. The blend with current-season plays (`shrink_plays`) does not change.
 
@@ -87,7 +87,9 @@ Each `psu simulate` run writes its summary to `sim_history`. It first deletes an
 
 1. Games whose slate is before N use actual results.
 2. Every game at or after slate N gets features from **ratings frozen at slate N**:
-   - `features.frozen_ratings(ratings, as_of_slate)` returns each team's row from the latest slate at or before N.
+   - `features.frozen_ratings(ratings, season, as_of_slate)` returns each team's row from the latest slate at or before N.
+   - A team with no row at or before N uses its first row of the season. That row holds only its preseason prior, because the team had played no games yet.
+   - A team that had a bye just before N carries a rating that is one week stale. That is acceptable: it never uses information from after N.
    - Rest and Vegas features are unchanged.
 3. The saved model predicts margins from those features; phase sigmas come from the report.
 4. The existing simulation code runs on those margins, and the rows are written with `backfilled = true`.
@@ -95,8 +97,8 @@ Each `psu simulate` run writes its summary to `sim_history`. It first deletes an
 A caveat, noted in the report and the dashboard caption: the model's coefficients were fitted with this season's completed games in view. The ratings are honest as of week N; the coefficients are not.
 
 ### Dashboard
-- The Predictions page gains an "Odds over time" line chart: `p_cfp` and `p_conf_champ` by `as_of_slate`.
-- A team picker defaults to Penn State.
+- The Predictions page gains an "Odds over time" line chart for the simulated team (Penn State): `p_cfp`, `p_conf_champ` and `p_title_game` by `as_of_slate`.
+- There is no team picker, because the simulator reports on one team per run.
 - When `sim_history` is empty or missing, the page shows a note instead of an error.
 
 ## Error handling
