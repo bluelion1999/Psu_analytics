@@ -3,8 +3,15 @@ import pandas as pd
 import pytest
 
 from psu.features import (
-    FEATURES, MAX_REST, game_features, league_means, rest_days, rolling_ratings, season_ratings,
-    slate_index, vegas_margin,
+    FEATURES,
+    MAX_REST,
+    game_features,
+    league_means,
+    rest_days,
+    rolling_ratings,
+    season_ratings,
+    slate_index,
+    vegas_margin,
 )
 
 SCHEDULE = [(1, "A", "B"), (1, "C", "D"), (2, "A", "C"), (2, "B", "D"), (3, "A", "D"), (3, "B", "C")]
@@ -12,13 +19,26 @@ QUALITY = {"A": 0.4, "B": 0.1, "C": -0.1, "D": -0.4, "E": 0.0}
 
 
 def make_games(season, schedule=SCHEDULE, start_id=0):
-    return pd.DataFrame([
-        {"id": season * 100 + start_id + i, "season": season, "week": week, "season_type": "regular",
-         "start_date": pd.Timestamp(f"{season}-09-01") + pd.Timedelta(days=7 * (week - 1)),
-         "neutral_site": False, "completed": True, "home_team": home, "away_team": away,
-         "home_classification": "fbs", "away_classification": "fbs", "home_points": 28, "away_points": 21}
-        for i, (week, home, away) in enumerate(schedule)
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "id": season * 100 + start_id + i,
+                "season": season,
+                "week": week,
+                "season_type": "regular",
+                "start_date": pd.Timestamp(f"{season}-09-01") + pd.Timedelta(days=7 * (week - 1)),
+                "neutral_site": False,
+                "completed": True,
+                "home_team": home,
+                "away_team": away,
+                "home_classification": "fbs",
+                "away_classification": "fbs",
+                "home_points": 28,
+                "away_points": 21,
+            }
+            for i, (week, home, away) in enumerate(schedule)
+        ]
+    )
 
 
 def make_plays(games, n=20, seed=0):
@@ -27,17 +47,29 @@ def make_plays(games, n=20, seed=0):
     for g in games.itertuples():
         for off, de in ((g.home_team, g.away_team), (g.away_team, g.home_team)):
             for v in QUALITY[off] - QUALITY[de] + rng.normal(0, 0.1, n):
-                rows.append({"game_id": g.id, "season": g.season, "offense": off, "defense": de,
-                             "ppa": v, "success": v > 0, "venue": "neutral", "garbage": False})
+                rows.append(
+                    {
+                        "game_id": g.id,
+                        "season": g.season,
+                        "offense": off,
+                        "defense": de,
+                        "ppa": v,
+                        "success": v > 0,
+                        "venue": "neutral",
+                        "garbage": False,
+                    }
+                )
     return pd.DataFrame(rows)
 
 
 def test_slate_index_puts_postseason_after_regular_season():
-    games = pd.DataFrame([
-        {"id": 1, "season": 2024, "week": 14, "season_type": "regular"},
-        {"id": 2, "season": 2024, "week": 1, "season_type": "postseason"},
-        {"id": 3, "season": 2024, "week": 3, "season_type": "regular"},
-    ])
+    games = pd.DataFrame(
+        [
+            {"id": 1, "season": 2024, "week": 14, "season_type": "regular"},
+            {"id": 2, "season": 2024, "week": 1, "season_type": "postseason"},
+            {"id": 3, "season": 2024, "week": 3, "season_type": "regular"},
+        ]
+    )
     assert slate_index(games).set_index("id")["slate"].to_dict() == {1: 14, 2: 15, 3: 3}
 
 

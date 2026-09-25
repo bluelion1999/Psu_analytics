@@ -3,8 +3,20 @@ import pytest
 
 from psu.metrics import efficiency, havoc_rate, red_zone, turnover_margin
 
-BASE = dict(season=2024, offense="A", defense="B", ppa=0.0, success=False, explosive=False,
-            turnover=False, play_class="rush", down=1, garbage=False, yards_to_goal=50, drive_id="d1")
+BASE = dict(
+    season=2024,
+    offense="A",
+    defense="B",
+    ppa=0.0,
+    success=False,
+    explosive=False,
+    turnover=False,
+    play_class="rush",
+    down=1,
+    garbage=False,
+    yards_to_goal=50,
+    drive_id="d1",
+)
 
 
 def enriched(*rows):
@@ -64,11 +76,16 @@ def test_efficiency_rejects_unknown_side():
 
 
 def test_havoc_rate_counts_box_score_events_and_forced_fumbles():
-    stats = box([
-        (1, "A", "tacklesForLoss", "5"), (1, "A", "passesDeflected", "3"),
-        (1, "A", "passesIntercepted", "1"), (1, "A", "totalFumbles", "0"),
-        (1, "B", "tacklesForLoss", "2"), (1, "B", "totalFumbles", "2"),  # B has no passesDeflected row
-    ])
+    stats = box(
+        [
+            (1, "A", "tacklesForLoss", "5"),
+            (1, "A", "passesDeflected", "3"),
+            (1, "A", "passesIntercepted", "1"),
+            (1, "A", "totalFumbles", "0"),
+            (1, "B", "tacklesForLoss", "2"),
+            (1, "B", "totalFumbles", "2"),  # B has no passesDeflected row
+        ]
+    )
     plays = enriched(*[{"offense": "B", "defense": "A"}] * 40, *[{"offense": "A", "defense": "B"}] * 50)
     out = havoc_rate(stats, plays).set_index("team")
     assert out.loc["A", "havoc_events"] == 11  # 5 TFL + 3 PD + 1 INT + 2 opponent fumbles
@@ -78,10 +95,14 @@ def test_havoc_rate_counts_box_score_events_and_forced_fumbles():
 
 
 def test_turnover_margin():
-    stats = box([
-        (1, "A", "turnovers", "1"), (1, "B", "turnovers", "3"),
-        (2, "A", "turnovers", "2"), (2, "C", "totalYards", "300"),  # C has no turnovers row: counts as 0
-    ])
+    stats = box(
+        [
+            (1, "A", "turnovers", "1"),
+            (1, "B", "turnovers", "3"),
+            (2, "A", "turnovers", "2"),
+            (2, "C", "totalYards", "300"),  # C has no turnovers row: counts as 0
+        ]
+    )
     out = turnover_margin(stats).set_index("team")
     assert out.loc["A", ["games", "giveaways", "takeaways", "margin"]].tolist() == [2, 3, 3, 0]
     assert out.loc["B", "margin"] == -2
@@ -90,20 +111,52 @@ def test_turnover_margin():
 
 def test_red_zone_trips_touchdowns_and_points():
     plays = enriched(
-        {"drive_id": "d1", "yards_to_goal": 15}, {"drive_id": "d1", "yards_to_goal": 3},
-        {"drive_id": "d2", "yards_to_goal": 18}, {"drive_id": "d3", "yards_to_goal": 40},
+        {"drive_id": "d1", "yards_to_goal": 15},
+        {"drive_id": "d1", "yards_to_goal": 3},
+        {"drive_id": "d2", "yards_to_goal": 18},
+        {"drive_id": "d3", "yards_to_goal": 40},
         {"drive_id": "d4", "yards_to_goal": 5},
     )
-    drives = pd.DataFrame([
-        {"id": "d1", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 0,
-         "end_offense_score": 7, "drive_result": "TD"},
-        {"id": "d2", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 7,
-         "end_offense_score": 10, "drive_result": "FG"},
-        {"id": "d3", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 10,
-         "end_offense_score": 10, "drive_result": "PUNT"},
-        {"id": "d4", "season": 2024, "offense": "A", "defense": "B", "start_offense_score": 10,
-         "end_offense_score": 11, "drive_result": "TD"},
-    ])
+    drives = pd.DataFrame(
+        [
+            {
+                "id": "d1",
+                "season": 2024,
+                "offense": "A",
+                "defense": "B",
+                "start_offense_score": 0,
+                "end_offense_score": 7,
+                "drive_result": "TD",
+            },
+            {
+                "id": "d2",
+                "season": 2024,
+                "offense": "A",
+                "defense": "B",
+                "start_offense_score": 7,
+                "end_offense_score": 10,
+                "drive_result": "FG",
+            },
+            {
+                "id": "d3",
+                "season": 2024,
+                "offense": "A",
+                "defense": "B",
+                "start_offense_score": 10,
+                "end_offense_score": 10,
+                "drive_result": "PUNT",
+            },
+            {
+                "id": "d4",
+                "season": 2024,
+                "offense": "A",
+                "defense": "B",
+                "start_offense_score": 10,
+                "end_offense_score": 11,
+                "drive_result": "TD",
+            },
+        ]
+    )
     row = red_zone(plays, drives).iloc[0]
     assert (row["team"], row["trips"], row["touchdowns"]) == ("A", 3, 2)
     assert row["td_rate"] == pytest.approx(2 / 3)

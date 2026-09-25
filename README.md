@@ -1,5 +1,7 @@
 # PSU Analytics
 
+[![CI](https://github.com/bluelion1999/Psu_analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/bluelion1999/Psu_analytics/actions/workflows/ci.yml)
+
 Penn State football analytics built on the [CollegeFootballData](https://collegefootballdata.com) API:
 a cached data pipeline into DuckDB, efficiency metrics, predictive models, and a Streamlit dashboard.
 The full build plan is in `docs/superpowers/specs/psu-analytics-build-plan.md`.
@@ -12,6 +14,31 @@ python -m venv .venv
 copy .env.example .env   # then paste your free key from https://collegefootballdata.com/key
 .venv\Scripts\python -m pytest
 ```
+
+## Daily use
+
+```powershell
+.venv\Scripts\psu refresh                # ingest the current season, then build, train and simulate
+.venv\Scripts\psu refresh --skip-ingest  # offline: rebuild everything from local data (no API calls)
+```
+
+`psu refresh` runs the same steps as `psu ingest --seasons <current>`, `psu build`, `psu train` and
+`psu simulate`, using the tuned defaults in `src/psu/config.py`. It prints a `== step ==` header
+for each step and stops at the first one that fails, with that step's exit code: 2 for a usage or
+data error, 3 when ingest hits the API budget. A daily in-season run costs about 5 API calls.
+Flags: `--max-calls N` (ingest budget), `--sims N` and `--seed N` (simulation).
+
+## Development
+
+```powershell
+.venv\Scripts\python -m pytest    # tests (real-data tests skip when data/psu.duckdb is absent)
+.venv\Scripts\ruff check .        # lint
+.venv\Scripts\ruff format .       # format
+```
+
+CI (GitHub Actions) runs lint, a format check and the tests on Python 3.11 and 3.13 for every push
+and pull request into `main`. To hide the one-time format commit from `git blame`, run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 ## Phase 1: Data pipeline
 

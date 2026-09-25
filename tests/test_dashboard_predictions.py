@@ -1,6 +1,6 @@
 import pytest
-
 from conftest import seed_dashboard_db
+
 from psu.dashboard.common import MissingData
 from psu.dashboard.predictions import next_slate, sim_conference, sim_summary, sim_win_totals, upcoming
 from psu.db import connect
@@ -46,7 +46,14 @@ def test_next_slate_is_the_earliest_upcoming_week(con):
     slate = next_slate(con, 2026)
     assert list(slate["week"].unique()) == [2] and len(slate) == 2
     assert list(slate.columns) == [
-        "week", "start_date", "away_team", "home_team", "neutral_site", "pred_margin", "home_win_prob", "vegas_margin",
+        "week",
+        "start_date",
+        "away_team",
+        "home_team",
+        "neutral_site",
+        "pred_margin",
+        "home_win_prob",
+        "vegas_margin",
     ]
     assert next_slate(con, 2025).empty
 

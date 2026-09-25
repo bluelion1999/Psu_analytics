@@ -1,15 +1,16 @@
 """Pull CFBD data for a set of seasons into DuckDB, calling the API only for data not already cached."""
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import duckdb
 
 from psu import db
-from psu.client import CacheEntry, CachedClient
+from psu.client import CachedClient, CacheEntry
 from psu.flatten import FLATTENERS
 
 log = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def _parse_ts(value: str | None) -> datetime | None:
     if not value:
         return None
     ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
 
 
 def weekly_requests(
@@ -108,7 +109,7 @@ def ingest(
     final_after: timedelta = timedelta(days=3),
     refresh_after: timedelta = timedelta(hours=24),
 ) -> IngestResult:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     for season in seasons:
         calendar_max_age = SLOW_REFRESH if season >= current else None
         calendar = client.get("calendar", {"year": season}, max_age=calendar_max_age).data
@@ -117,9 +118,7 @@ def ingest(
             Request(e, p, SLOW_REFRESH if e in ("talent", "recruiting") else refresh_after, season_final_at)
             for e, p in season_requests(season)
         ]
-        requests += weekly_requests(
-            season, calendar, now=now, final_after=final_after, refresh_after=refresh_after
-        )
+        requests += weekly_requests(season, calendar, now=now, final_after=final_after, refresh_after=refresh_after)
         log.info("Season %d: %d requests", season, len(requests))
         for req in requests:
             entry = client.get(req.endpoint, req.params, max_age=req.max_age, final_at=req.final_at)

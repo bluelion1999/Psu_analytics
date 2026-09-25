@@ -1,4 +1,5 @@
 """Players: season passing, rushing and receiving tables from box scores."""
+
 import streamlit as st
 
 from psu.config import TEAM
@@ -23,8 +24,14 @@ if table.empty:
     st.info("No players meet the minimum.")
 else:
     rate = st.column_config.NumberColumn(format="%.1f")
-    st.dataframe(table, hide_index=True, column_config={
-        "comp_pct": st.column_config.NumberColumn("Comp %", format="percent"),
-        "yds_per_att": rate, "yds_per_carry": rate, "yds_per_rec": rate,
-    })
+    st.dataframe(
+        table,
+        hide_index=True,
+        column_config={
+            "comp_pct": st.column_config.NumberColumn("Comp %", format="percent"),
+            "yds_per_att": rate,
+            "yds_per_carry": rate,
+            "yds_per_rec": rate,
+        },
+    )
 st.caption("From CFBD box scores. Plays don't name players, so per-player EPA isn't available.")

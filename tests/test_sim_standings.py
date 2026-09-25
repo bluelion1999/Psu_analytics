@@ -8,8 +8,8 @@ FULL = np.ones((4, 4), dtype=int) - np.eye(4, dtype=int)  # every pair played on
 def h2h(*results):
     """results: (winner, loser) pairs -> wins matrix."""
     wins = np.zeros((4, 4), dtype=int)
-    for w, l in results:
-        wins[w, l] += 1
+    for winner, loser in results:
+        wins[winner, loser] += 1
     return wins
 
 

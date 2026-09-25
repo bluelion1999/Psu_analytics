@@ -1,4 +1,5 @@
 """Streamlit helpers shared by the pages: cached reads, the season picker, and friendly missing-data messages."""
+
 from __future__ import annotations
 
 import importlib

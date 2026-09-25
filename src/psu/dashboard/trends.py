@@ -1,4 +1,5 @@
 """Efficiency trends data: EPA/play and success rate by season, and game by game within a season."""
+
 from __future__ import annotations
 
 import duckdb
@@ -40,8 +41,9 @@ def season_trends(con: duckdb.DuckDBPyConnection, team: str) -> pd.DataFrame:
             if not np.isnan(b["value"]):
                 rows.append({"season": season, "metric": label, "group": team, "value": b["value"]})
             if members:
-                rows.append({"season": season, "metric": label, "group": f"{conference} avg",
-                             "value": b["conference_avg"]})
+                rows.append(
+                    {"season": season, "metric": label, "group": f"{conference} avg", "value": b["conference_avg"]}
+                )
             rows.append({"season": season, "metric": label, "group": "FBS avg", "value": b["national_avg"]})
     return pd.DataFrame(rows, columns=["season", "metric", "group", "value"])
 

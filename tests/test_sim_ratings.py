@@ -9,7 +9,9 @@ TRUE = {"A": 10.0, "B": 4.0, "C": -3.0, "D": -11.0}  # sums to 0
 def round_robin(hfa=3.0):
     rows = [
         {"home_team": h, "away_team": a, "neutral_site": False, "pred_margin": hfa + TRUE[h] - TRUE[a]}
-        for h in TRUE for a in TRUE if h != a
+        for h in TRUE
+        for a in TRUE
+        if h != a
     ]
     rows.append({"home_team": "A", "away_team": "D", "neutral_site": True, "pred_margin": TRUE["A"] - TRUE["D"]})
     return pd.DataFrame(rows)

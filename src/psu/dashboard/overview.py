@@ -1,4 +1,5 @@
 """Season overview data: record, schedule with results and pregame lines, and metrics against conference and FBS."""
+
 from __future__ import annotations
 
 import duckdb
@@ -8,8 +9,20 @@ import pandas as pd
 from psu.dashboard.common import benchmark, conference_members, has_table, require, team_conference, team_games
 
 SCHEDULE_COLUMNS = [
-    "game_id", "week", "season_type", "start_date", "opponent", "venue", "completed", "result",
-    "team_points", "opp_points", "vegas_margin", "model_margin", "win_prob", "prediction",
+    "game_id",
+    "week",
+    "season_type",
+    "start_date",
+    "opponent",
+    "venue",
+    "completed",
+    "result",
+    "team_points",
+    "opp_points",
+    "vegas_margin",
+    "model_margin",
+    "win_prob",
+    "prediction",
 ]
 METRICS = [  # (label, table, column, higher_is_better)
     ("Offense EPA/play", "team_offense", "epa_per_play", True),
@@ -43,11 +56,15 @@ def schedule(con: duckdb.DuckDBPyConnection, season: int, team: str) -> pd.DataF
             [season],
         ).df()
     else:
-        preds = pd.DataFrame({
-            "game_id": pd.Series(dtype="int64"), "pred_margin": pd.Series(dtype=float),
-            "vegas_margin": pd.Series(dtype=float), "home_win_prob": pd.Series(dtype=float),
-            "split": pd.Series(dtype=object),
-        })
+        preds = pd.DataFrame(
+            {
+                "game_id": pd.Series(dtype="int64"),
+                "pred_margin": pd.Series(dtype=float),
+                "vegas_margin": pd.Series(dtype=float),
+                "home_win_prob": pd.Series(dtype=float),
+                "split": pd.Series(dtype=object),
+            }
+        )
     df = games.merge(preds, on="game_id", how="left")
     sign = np.where(df["is_home"], 1.0, -1.0)
     home_prob = df["home_win_prob"].astype(float)

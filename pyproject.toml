@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.16,<0.17"]  # pinned: new ruff releases can change format/lint output
 
 [project.scripts]
 psu = "psu.cli:main"
@@ -30,3 +30,12 @@ packages = ["src/psu"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["docs"]  # plans embed historical code snippets; leave them as written
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["B008"]

@@ -1,4 +1,5 @@
 """In-game win probability from the score, time left and the pregame expected margin (Stern 1994)."""
+
 from __future__ import annotations
 
 import numpy as np

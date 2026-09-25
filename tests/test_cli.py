@@ -68,6 +68,7 @@ def test_build_rejects_bad_garbage_spec(settings, capsys):
 
 def test_build_writes_tables(settings, capsys):
     from conftest import seed_raw_tables
+
     from psu import db
 
     con = db.connect(settings.db_path)
@@ -85,6 +86,7 @@ def test_train_requires_ingested_data(settings, capsys):
 
 def test_train_reports_and_writes_outputs(settings, capsys, monkeypatch):
     from conftest import seed_raw_tables, synthetic_features
+
     from psu import db
 
     con = db.connect(settings.db_path)
@@ -98,6 +100,7 @@ def test_train_reports_and_writes_outputs(settings, capsys, monkeypatch):
 
 def test_train_with_too_few_seasons_is_a_clean_error(settings, capsys, monkeypatch):
     from conftest import seed_raw_tables, synthetic_features
+
     from psu import db
 
     con = db.connect(settings.db_path)
@@ -111,6 +114,7 @@ def test_train_with_too_few_seasons_is_a_clean_error(settings, capsys, monkeypat
 
 def _trained(settings):
     from conftest import seed_league_db
+
     from psu import db
 
     reports = settings.db_path.parent / "reports"
@@ -163,3 +167,149 @@ def test_simulate_unknown_team_is_a_usage_error(settings, capsys):
     finally:
         con.close()
     assert "sim_team_summary" not in tables
+
+
+def test_parser_defaults_come_from_config():
+    parser = cli.build_parser()
+    b = parser.parse_args(["build"])
+    assert (b.garbage, b.alpha) == (config.GARBAGE, config.BUILD_ALPHA)
+    t = parser.parse_args(["train"])
+    assert (t.alpha, t.shrink_plays) == (config.TRAIN_ALPHA, config.SHRINK_PLAYS)
+    s = parser.parse_args(["simulate"])
+    assert (s.sims, s.seed, s.tau, s.team) == (config.SIM_N, config.SIM_SEED, config.SIM_TAU, config.TEAM)
+
+
+def test_database_in_use_is_a_clean_error(settings, capsys, monkeypatch):
+    import duckdb
+
+    from psu import db
+
+    def locked(*args, **kwargs):
+        raise duckdb.IOException("Could not set lock on file: held by PID 1234")
+
+    monkeypatch.setattr(db, "connect", locked)
+    assert cli.main(["build"]) == 2
+    err = capsys.readouterr().err
+    assert "in use by another process" in err and "PID 1234" in err
+
+
+def _stub_steps(monkeypatch, codes=None, api_calls=4):
+    """Replace refresh's four steps with recorders; codes maps step -> exit code (default 0)."""
+    from types import SimpleNamespace
+
+    from psu.ingest import IngestResult
+
+    codes = codes or {}
+    calls = []
+
+    def ingest_step(settings, seasons, max_calls):
+        calls.append(("ingest", seasons, max_calls))
+        code = codes.get("ingest", 0)
+        return code, (IngestResult(api_calls=api_calls, row_counts={}) if code == 0 else None)
+
+    def build_step(args, settings):
+        calls.append(("build", args.garbage, args.alpha))
+        return codes.get("build", 0)
+
+    def train_step(args, settings):
+        calls.append(("train", args.alpha, args.shrink_plays))
+        return codes.get("train", 0)
+
+    def simulate_step(settings, *, team, n_sims, seed, tau):
+        calls.append(("simulate", team, n_sims, seed, tau))
+        code = codes.get("simulate", 0)
+        return code, (SimpleNamespace(team=team, mean_wins=9.47) if code == 0 else None)
+
+    monkeypatch.setattr(cli, "_ingest", ingest_step)
+    monkeypatch.setattr(cli, "cmd_build", build_step)
+    monkeypatch.setattr(cli, "cmd_train", train_step)
+    monkeypatch.setattr(cli, "_simulate", simulate_step)
+    return calls
+
+
+def test_refresh_runs_every_step_in_order_with_shared_defaults(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch)
+    assert cli.main(["refresh"]) == 0
+    assert calls == [
+        ("ingest", [2026], None),
+        ("build", config.GARBAGE, config.BUILD_ALPHA),
+        ("train", config.TRAIN_ALPHA, config.SHRINK_PLAYS),
+        ("simulate", config.TEAM, config.SIM_N, config.SIM_SEED, config.SIM_TAU),
+    ]
+    out = capsys.readouterr().out
+    assert out.index("== ingest ==") < out.index("== build ==") < out.index("== train ==") < out.index("== simulate ==")
+    assert "refresh ok in" in out and "4 API calls" in out and "Penn State mean wins 9.47" in out
+
+
+def test_refresh_passes_flags_through(settings, monkeypatch):
+    calls = _stub_steps(monkeypatch)
+    assert cli.main(["refresh", "--max-calls", "7", "--sims", "500", "--seed", "3"]) == 0
+    assert calls[0] == ("ingest", [2026], 7)
+    assert calls[-1] == ("simulate", config.TEAM, 500, 3, config.SIM_TAU)
+
+
+def test_refresh_stops_at_the_first_failing_step(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch, codes={"build": 2})
+    assert cli.main(["refresh"]) == 2
+    assert [c[0] for c in calls] == ["ingest", "build"]
+    captured = capsys.readouterr()
+    assert "refresh stopped at build (exit 2)" in captured.err
+    assert "refresh ok" not in captured.out
+
+
+def test_refresh_budget_stop_returns_3(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch, codes={"ingest": 3})
+    assert cli.main(["refresh"]) == 3
+    assert [c[0] for c in calls] == ["ingest"]
+    assert "refresh stopped at ingest (exit 3)" in capsys.readouterr().err
+
+
+def test_refresh_skip_ingest_never_ingests(settings, capsys, monkeypatch):
+    calls = _stub_steps(monkeypatch)
+    assert cli.main(["refresh", "--skip-ingest"]) == 0
+    assert [c[0] for c in calls] == ["build", "train", "simulate"]
+    out = capsys.readouterr().out
+    assert "== ingest ==" not in out and "0 API calls" in out
+
+
+def test_refresh_without_key_stops_at_ingest(settings, capsys):
+    assert cli.main(["refresh"]) == 2
+    err = capsys.readouterr().err
+    assert "CFBD_API_KEY" in err and "refresh stopped at ingest (exit 2)" in err
+
+
+def test_refresh_skip_ingest_on_empty_db_stops_at_build(settings, capsys):
+    assert cli.main(["refresh", "--skip-ingest"]) == 2
+    err = capsys.readouterr().err
+    assert "psu ingest" in err and "refresh stopped at build (exit 2)" in err
+
+
+def test_database_error_that_is_not_a_lock_is_not_blamed_on_another_process(settings, capsys, monkeypatch):
+    import duckdb
+
+    from psu import db
+
+    def unreadable(*args, **kwargs):
+        raise duckdb.IOException("Cannot open file: Permission denied")
+
+    monkeypatch.setattr(db, "connect", unreadable)
+    assert cli.main(["build"]) == 2
+    err = capsys.readouterr().err
+    assert "cannot open or write" in err and "Permission denied" in err
+    assert "in use by another process" not in err
+
+
+def test_refresh_database_locked_mid_run_reports_the_step(settings, capsys, monkeypatch):
+    import duckdb
+
+    calls = _stub_steps(monkeypatch)
+
+    def locked_train(args, settings):
+        calls.append(("train",))
+        raise duckdb.IOException("Could not set lock on file: held by PID 1234")
+
+    monkeypatch.setattr(cli, "cmd_train", locked_train)
+    assert cli.main(["refresh"]) == 2
+    assert [c[0] for c in calls] == ["ingest", "build", "train"]
+    err = capsys.readouterr().err
+    assert "in use by another process" in err and "refresh stopped at train (exit 2)" in err

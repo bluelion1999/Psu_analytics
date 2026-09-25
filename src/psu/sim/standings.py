@@ -1,4 +1,5 @@
 """Pick the two conference title game teams for one simulated season (simplified Big Ten tiebreakers)."""
+
 from __future__ import annotations
 
 import numpy as np

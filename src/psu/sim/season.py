@@ -1,4 +1,5 @@
 """Vectorised game draws: a season-long strength per team per simulation, plus independent game noise."""
+
 from __future__ import annotations
 
 import math

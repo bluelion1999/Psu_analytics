@@ -4,15 +4,34 @@ import pytest
 from psu.transform import Explosive, GarbageTime, enrich_plays, is_garbage, is_success, score_state
 
 BASE = dict(
-    game_id=1, drive_id="d1", season=2024, week=1, season_type="regular",
-    offense="Penn State", offense_conference="Big Ten", defense="Opp", defense_conference="MAC",
-    home="Penn State", away="Opp", period=1, down=1, distance=10, yards_to_goal=75, yards_gained=5,
-    play_type="Rush", play_text="RB One run for 5 yds", ppa=0.1, offense_score=0, defense_score=0,
+    game_id=1,
+    drive_id="d1",
+    season=2024,
+    week=1,
+    season_type="regular",
+    offense="Penn State",
+    offense_conference="Big Ten",
+    defense="Opp",
+    defense_conference="MAC",
+    home="Penn State",
+    away="Opp",
+    period=1,
+    down=1,
+    distance=10,
+    yards_to_goal=75,
+    yards_gained=5,
+    play_type="Rush",
+    play_text="RB One run for 5 yds",
+    ppa=0.1,
+    offense_score=0,
+    defense_score=0,
 )
 GAMES = pd.DataFrame({"id": [1, 2], "neutral_site": [False, True]})
-DRIVES = pd.DataFrame([
-    {"id": "d1", "offense": "Penn State", "start_offense_score": 0, "start_defense_score": 0},
-])
+DRIVES = pd.DataFrame(
+    [
+        {"id": "d1", "offense": "Penn State", "start_offense_score": 0, "start_defense_score": 0},
+    ]
+)
 
 
 def plays(*overrides):
@@ -21,8 +40,16 @@ def plays(*overrides):
 
 @pytest.mark.parametrize(
     "down,distance,gained,expected",
-    [(1, 10, 5, True), (1, 10, 4, False), (2, 10, 7, True), (2, 10, 6, False),
-     (3, 4, 4, True), (3, 4, 3, False), (4, 1, 1, True), (4, 1, 0, False)],
+    [
+        (1, 10, 5, True),
+        (1, 10, 4, False),
+        (2, 10, 7, True),
+        (2, 10, 6, False),
+        (3, 4, 4, True),
+        (3, 4, 3, False),
+        (4, 1, 1, True),
+        (4, 1, 0, False),
+    ],
 )
 def test_success_thresholds(down, distance, gained, expected):
     df = plays({"down": down, "distance": distance, "yards_gained": gained})
@@ -40,8 +67,17 @@ def test_touchdowns_always_succeed_and_turnovers_never_do():
 
 @pytest.mark.parametrize(
     "period,margin,expected",
-    [(1, 50, False), (2, 38, False), (2, 39, True), (3, 29, True), (3, -29, True),
-     (3, 28, False), (4, 23, True), (4, 22, False), (5, 40, False)],
+    [
+        (1, 50, False),
+        (2, 38, False),
+        (2, 39, True),
+        (3, 29, True),
+        (3, -29, True),
+        (3, 28, False),
+        (4, 23, True),
+        (4, 22, False),
+        (5, 40, False),
+    ],
 )
 def test_garbage_time_default_thresholds(period, margin, expected):
     got = is_garbage(pd.Series([period]), pd.Series([margin]), GarbageTime())
@@ -63,7 +99,9 @@ def test_score_state_buckets():
 
 
 def test_enrich_filters_to_scrimmage_plays_with_ppa():
-    df = plays({"play_type": "Rush"}, {"play_type": "Punt"}, {"play_type": "Timeout"}, {"play_type": "Rush", "ppa": None})
+    df = plays(
+        {"play_type": "Rush"}, {"play_type": "Punt"}, {"play_type": "Timeout"}, {"play_type": "Rush", "ppa": None}
+    )
     assert list(enrich_plays(df, GAMES, DRIVES)["id"]) == ["0"]
 
 
@@ -96,9 +134,17 @@ def test_context_columns():
         {"offense": "Opp", "defense": "Penn State", "offense_score": 0, "defense_score": 35, "period": 3},
         {"game_id": 2, "period": 5},
     )
-    drives = pd.concat([DRIVES, pd.DataFrame([
-        {"id": "d2", "offense": "Penn State", "start_offense_score": 21, "start_defense_score": 0},
-    ])], ignore_index=True)
+    drives = pd.concat(
+        [
+            DRIVES,
+            pd.DataFrame(
+                [
+                    {"id": "d2", "offense": "Penn State", "start_offense_score": 21, "start_defense_score": 0},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
     out = enrich_plays(df, GAMES, drives)
     assert list(out["venue"]) == ["home", "away", "neutral"]
     assert list(out["score_state"]) == ["up 9+", "down 9+", "tied"]
@@ -124,13 +170,20 @@ def test_margin_uses_pre_play_score_on_scoring_plays():
     assert list(out["margin"]) == [0]
     assert list(out["score_state"]) == ["tied"]
 
-    drives = pd.DataFrame([
-        {"id": "d3", "offense": "Penn State", "start_offense_score": 22, "start_defense_score": 0},
-    ])
-    q4 = plays({
-        "play_type": "Passing Touchdown", "period": 4, "drive_id": "d3",
-        "offense_score": 29, "defense_score": 0,
-    })
+    drives = pd.DataFrame(
+        [
+            {"id": "d3", "offense": "Penn State", "start_offense_score": 22, "start_defense_score": 0},
+        ]
+    )
+    q4 = plays(
+        {
+            "play_type": "Passing Touchdown",
+            "period": 4,
+            "drive_id": "d3",
+            "offense_score": 29,
+            "defense_score": 0,
+        }
+    )
     out_q4 = enrich_plays(q4, GAMES, drives)
     assert list(out_q4["margin"]) == [22]
     assert list(out_q4["garbage"]) == [False]

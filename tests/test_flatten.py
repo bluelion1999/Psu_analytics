@@ -93,7 +93,10 @@ def test_player_game_stats_long_format():
                     "homeAway": "home",
                     "points": 34,
                     "categories": [
-                        {"name": "passing", "types": [{"name": "YDS", "athletes": [{"id": "111", "name": "QB One", "stat": "250"}]}]}
+                        {
+                            "name": "passing",
+                            "types": [{"name": "YDS", "athletes": [{"id": "111", "name": "QB One", "stat": "250"}]}],
+                        }
                     ],
                 }
             ],

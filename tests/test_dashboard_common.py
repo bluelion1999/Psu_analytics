@@ -1,11 +1,17 @@
-from pathlib import Path
-
 import duckdb
 import pytest
-
 from conftest import seed_dashboard_db
+
 from psu.dashboard.common import (
-    MissingData, benchmark, conference_members, db_path, read, require, seasons, team_conference, team_games,
+    MissingData,
+    benchmark,
+    conference_members,
+    db_path,
+    read,
+    require,
+    seasons,
+    team_conference,
+    team_games,
 )
 from psu.db import connect
 

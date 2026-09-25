@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from psu import db
 from psu.client import CachedClient
 from psu.ingest import ingest
 
-NOW = datetime(2026, 9, 22, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 22, 12, tzinfo=UTC)
 SEASON_LEVEL = 7  # games, drives, lines, advanced_season, ratings_sp, talent, recruiting
 WEEKLY = 3  # plays, team_game_stats, player_game_stats
 
@@ -52,13 +52,13 @@ def test_in_progress_week_is_refetched_once_after_it_becomes_final(tmp_path, fak
     con, first = run(tmp_path, fake_cfbd, [2026])
 
     fake_cfbd.calls.clear()
-    _, second = run(tmp_path, fake_cfbd, [2026], now=datetime(2026, 10, 5, 12, tzinfo=timezone.utc), con=con)
+    _, second = run(tmp_path, fake_cfbd, [2026], now=datetime(2026, 10, 5, 12, tzinfo=UTC), con=con)
     week4_calls = [c for c in fake_cfbd.calls if c[1].get("week") == 4]
     assert len(week4_calls) == WEEKLY  # plays, team_game_stats, player_game_stats: each refetched once
     assert {e for e, _ in week4_calls} == set(("plays", "team_game_stats", "player_game_stats"))
 
     fake_cfbd.calls.clear()
-    _, third = run(tmp_path, fake_cfbd, [2026], now=datetime(2026, 10, 6, 12, tzinfo=timezone.utc), con=con)
+    _, third = run(tmp_path, fake_cfbd, [2026], now=datetime(2026, 10, 6, 12, tzinfo=UTC), con=con)
     assert [c for c in fake_cfbd.calls if c[0] == "plays" and c[1].get("week") == 4] == []
 
 
@@ -66,15 +66,11 @@ def test_season_level_data_is_refetched_once_after_the_season_ends(tmp_path, fak
     con, first = run(tmp_path, fake_cfbd, [2026], current=2026)
 
     fake_cfbd.calls.clear()
-    _, second = run(
-        tmp_path, fake_cfbd, [2026], now=datetime(2027, 3, 2, 12, tzinfo=timezone.utc), con=con, current=2027
-    )
+    _, second = run(tmp_path, fake_cfbd, [2026], now=datetime(2027, 3, 2, 12, tzinfo=UTC), con=con, current=2027)
     assert len([c for c in fake_cfbd.calls if c[0] == "games"]) == 1
 
     fake_cfbd.calls.clear()
-    _, third = run(
-        tmp_path, fake_cfbd, [2026], now=datetime(2027, 3, 3, 12, tzinfo=timezone.utc), con=con, current=2027
-    )
+    _, third = run(tmp_path, fake_cfbd, [2026], now=datetime(2027, 3, 3, 12, tzinfo=UTC), con=con, current=2027)
     assert [c for c in fake_cfbd.calls if c[0] == "games"] == []
 
 

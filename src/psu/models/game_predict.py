@@ -1,4 +1,5 @@
 """Game margin model: pipelines, win probability, scoring, and a time-based backtest against Vegas."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,8 +51,14 @@ def make_pipeline(kind: str) -> Pipeline:
     if kind == "linear":
         steps = [("scale", StandardScaler()), ("model", Ridge(alpha=1.0))]
     elif kind == "xgboost":
-        steps = [("model", XGBRegressor(n_estimators=300, max_depth=3, learning_rate=0.05,
-                                        subsample=0.8, random_state=0, n_jobs=1))]
+        steps = [
+            (
+                "model",
+                XGBRegressor(
+                    n_estimators=300, max_depth=3, learning_rate=0.05, subsample=0.8, random_state=0, n_jobs=1
+                ),
+            )
+        ]
     else:
         raise ValueError(f"kind must be one of {MODEL_KINDS}, got {kind!r}")
     return Pipeline([("impute", _MedianImputer()), *steps])

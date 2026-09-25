@@ -1,4 +1,5 @@
 """Game explorer: line score, box score, drive chart, win probability and biggest plays for one game."""
+
 import altair as alt
 import streamlit as st
 
@@ -14,7 +15,7 @@ options = load_or_stop("games.game_options", season, TEAM)
 if options.empty:
     st.info(f"No completed {TEAM} games in {season} yet.")
     st.stop()
-labels = dict(zip(options["game_id"].tolist(), options["label"].tolist()))
+labels = dict(zip(options["game_id"].tolist(), options["label"].tolist(), strict=True))
 game_id = st.selectbox("Game", list(labels), format_func=labels.get)
 
 scores = load_or_stop("games.line_scores", game_id)
@@ -57,10 +58,17 @@ else:
             .mark_line(interpolate="step-after")
             .encode(
                 x=alt.X("minute:Q", title="Minute", scale=alt.Scale(domain=[0, 60])),
-                y=alt.Y("home_wp:Q", title=f"{home} win probability", scale=alt.Scale(domain=[0, 1]),
-                        axis=alt.Axis(format="%")),
-                tooltip=[alt.Tooltip("minute:Q", format=".1f"), "home_margin:Q",
-                         alt.Tooltip("home_wp:Q", format=".0%")],
+                y=alt.Y(
+                    "home_wp:Q",
+                    title=f"{home} win probability",
+                    scale=alt.Scale(domain=[0, 1]),
+                    axis=alt.Axis(format="%"),
+                ),
+                tooltip=[
+                    alt.Tooltip("minute:Q", format=".1f"),
+                    "home_margin:Q",
+                    alt.Tooltip("home_wp:Q", format=".0%"),
+                ],
             )
         )
         st.altair_chart(chart)

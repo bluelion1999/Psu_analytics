@@ -1,11 +1,17 @@
 import json
 
 import pytest
-
 from conftest import seed_league_db, synthetic_league
+
 from psu.db import connect
 from psu.simulate import (
-    SUMMARY_COLUMNS, MissingModel, load_inputs, load_sigma, report_markdown, run_simulation, simulate_season,
+    SUMMARY_COLUMNS,
+    MissingModel,
+    load_inputs,
+    load_sigma,
+    report_markdown,
+    run_simulation,
+    simulate_season,
     write_results,
 )
 

@@ -1,4 +1,5 @@
 """Season simulator: Monte Carlo over the rest of the current season using the Phase 3 game model."""
+
 from __future__ import annotations
 
 import json
@@ -111,14 +112,21 @@ def run_simulation(
     home_win[:, completed] = done["home_points"].to_numpy(float) > done["away_points"].to_numpy(float)
     if predicted.any():
         margins = draw_margins(
-            relevant.loc[predicted, "pred_margin"].to_numpy(float), home[predicted], away[predicted],
-            strengths, sigma=sigma, tau=tau, rng=rng,
+            relevant.loc[predicted, "pred_margin"].to_numpy(float),
+            home[predicted],
+            away[predicted],
+            strengths,
+            sigma=sigma,
+            tau=tau,
+            rng=rng,
         )
         home_win[:, predicted] = margins > 0
     if unrated.any():
         log.warning(
             "%d %s game(s) have no prediction; counting each as a win with probability %.2f",
-            int(unrated.sum()), team, unrated_win_prob,
+            int(unrated.sum()),
+            team,
+            unrated_win_prob,
         )
         team_won_unrated = rng.random((n_sims, int(unrated.sum()))) < unrated_win_prob
         team_is_home = (relevant.loc[unrated, "home_team"] == team).to_numpy()
@@ -157,9 +165,12 @@ def run_simulation(
             np.add.at(h2h_wins, (ca[~hw], ch[~hw]), 1)
             first[i], second[i] = top_two(conf_wins[i], conf_games, h2h_wins, h2h_games, rng)
 
-    title_completed = title_match is not None and bool(title_match["completed"]) and pd.notna(
-        title_match["home_points"]
-    ) and pd.notna(title_match["away_points"])
+    title_completed = (
+        title_match is not None
+        and bool(title_match["completed"])
+        and pd.notna(title_match["home_points"])
+        and pd.notna(title_match["away_points"])
+    )
     if title_completed:
         winner = (
             m_index[title_match["home_team"]]
@@ -172,8 +183,13 @@ def run_simulation(
         member_rating = np.array([ratings.rating.get(t, 0.0) for t in members])
         member_team = np.array([index[t] for t in members])
         title_margin = draw_matchups(
-            member_rating[first] - member_rating[second], member_team[first], member_team[second],
-            strengths, sigma=sigma, tau=tau, rng=rng,
+            member_rating[first] - member_rating[second],
+            member_team[first],
+            member_team[second],
+            strengths,
+            sigma=sigma,
+            tau=tau,
+            rng=rng,
         )
         champion = np.where(title_margin > 0, first, second)
 
@@ -196,16 +212,20 @@ def run_simulation(
         p_title_game=float(in_title.mean()),
         p_conf_champ=float(champ.mean()),
         p_cfp=float(cfp.mean()),
-        win_totals=pd.DataFrame({
-            "wins": np.arange(n_games + 1),
-            "prob": np.bincount(wins, minlength=n_games + 1) / n_sims,
-        }),
-        conference=pd.DataFrame({
-            "team": members,
-            "mean_conf_wins": conf_wins.mean(axis=0),
-            "p_title_game": [float(((first == m) | (second == m)).mean()) for m in range(n_members)],
-            "p_conf_champ": np.bincount(champion, minlength=n_members) / n_sims,
-        }),
+        win_totals=pd.DataFrame(
+            {
+                "wins": np.arange(n_games + 1),
+                "prob": np.bincount(wins, minlength=n_games + 1) / n_sims,
+            }
+        ),
+        conference=pd.DataFrame(
+            {
+                "team": members,
+                "mean_conf_wins": conf_wins.mean(axis=0),
+                "p_title_game": [float(((first == m) | (second == m)).mean()) for m in range(n_members)],
+                "p_conf_champ": np.bincount(champion, minlength=n_members) / n_sims,
+            }
+        ),
     )
 
 
@@ -214,8 +234,17 @@ GAME_COLUMNS = (
     "home_conference, away_conference, home_points, away_points, notes"
 )
 SUMMARY_COLUMNS = [
-    "season", "team", "n_sims", "seed", "tau", "as_of",
-    "mean_wins", "p_10_plus", "p_title_game", "p_conf_champ", "p_cfp",
+    "season",
+    "team",
+    "n_sims",
+    "seed",
+    "tau",
+    "as_of",
+    "mean_wins",
+    "p_10_plus",
+    "p_title_game",
+    "p_conf_champ",
+    "p_cfp",
 ]
 
 
@@ -225,8 +254,7 @@ def load_inputs(con: duckdb.DuckDBPyConnection, season: int) -> tuple[pd.DataFra
         raise MissingModel("game_predictions table not found; run `psu train` first")
     games = con.execute(f"SELECT {GAME_COLUMNS} FROM games WHERE season = ?", [season]).df()
     predictions = con.execute(
-        "SELECT game_id, home_team, away_team, neutral_site, pred_margin FROM game_predictions "
-        "WHERE season = ?",
+        "SELECT game_id, home_team, away_team, neutral_site, pred_margin FROM game_predictions WHERE season = ?",
         [season],
     ).df()
     return games, predictions
@@ -256,7 +284,14 @@ def simulate_season(
 ) -> SimResult:
     games, predictions = load_inputs(con, season)
     return run_simulation(
-        games, predictions, season=season, sigma=sigma, team=team, n_sims=n_sims, seed=seed, tau=tau,
+        games,
+        predictions,
+        season=season,
+        sigma=sigma,
+        team=team,
+        n_sims=n_sims,
+        seed=seed,
+        tau=tau,
         cfp_max_losses=cfp_max_losses,
     )
 
@@ -278,7 +313,7 @@ def report_markdown(result: SimResult) -> str:
         "| Wins | Probability |",
         "|---|---|",
     ]
-    lines += [f"| {w} | {p:.1%} |" for w, p in zip(result.win_totals["wins"], result.win_totals["prob"])]
+    lines += [f"| {w} | {p:.1%} |" for w, p in zip(result.win_totals["wins"], result.win_totals["prob"], strict=True)]
     lines += [
         "",
         "## Big Ten title race",
@@ -295,21 +330,34 @@ def report_markdown(result: SimResult) -> str:
 
 
 def write_results(con: duckdb.DuckDBPyConnection, result: SimResult, out_dir: Path) -> None:
-    summary = pd.DataFrame([{
-        "season": result.season, "team": result.team, "n_sims": result.n_sims, "seed": result.seed,
-        "tau": result.tau, "as_of": pd.NaT if result.as_of is None else result.as_of, "mean_wins": result.mean_wins,
-        "p_10_plus": result.p_10_plus, "p_title_game": result.p_title_game,
-        "p_conf_champ": result.p_conf_champ, "p_cfp": result.p_cfp,
-    }])[SUMMARY_COLUMNS]
+    summary = pd.DataFrame(
+        [
+            {
+                "season": result.season,
+                "team": result.team,
+                "n_sims": result.n_sims,
+                "seed": result.seed,
+                "tau": result.tau,
+                "as_of": pd.NaT if result.as_of is None else result.as_of,
+                "mean_wins": result.mean_wins,
+                "p_10_plus": result.p_10_plus,
+                "p_title_game": result.p_title_game,
+                "p_conf_champ": result.p_conf_champ,
+                "p_cfp": result.p_cfp,
+            }
+        ]
+    )[SUMMARY_COLUMNS]
     con.execute("BEGIN TRANSACTION")
     try:
         _write(con, "sim_team_summary", summary)
         _write(
-            con, "sim_win_totals",
+            con,
+            "sim_win_totals",
             result.win_totals.assign(season=result.season, team=result.team)[["season", "team", "wins", "prob"]],
         )
         _write(
-            con, "sim_conference",
+            con,
+            "sim_conference",
             result.conference.assign(season=result.season)[
                 ["season", "team", "mean_conf_wins", "p_title_game", "p_conf_champ"]
             ],

@@ -1,4 +1,5 @@
 """Train the game model from DuckDB: features, backtest, final fit, predictions table, saved model and report."""
+
 from __future__ import annotations
 
 import json
@@ -16,8 +17,20 @@ from psu.models import game_predict as gp
 from psu.transform import enrich_plays
 
 PREDICTION_COLUMNS = [
-    "game_id", "season", "week", "season_type", "start_date", "neutral_site", "home_team", "away_team",
-    "completed", "margin", "vegas_margin", "pred_margin", "home_win_prob", "split",
+    "game_id",
+    "season",
+    "week",
+    "season_type",
+    "start_date",
+    "neutral_site",
+    "home_team",
+    "away_team",
+    "completed",
+    "margin",
+    "vegas_margin",
+    "pred_margin",
+    "home_win_prob",
+    "split",
 ]
 
 
@@ -89,7 +102,7 @@ def train_and_save(
             "upcoming",
             "no_prior",
         ],
-        default="in_sample"
+        default="in_sample",
     )
 
     predictions = predictions[PREDICTION_COLUMNS]

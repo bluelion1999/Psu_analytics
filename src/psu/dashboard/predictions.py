@@ -1,4 +1,5 @@
 """Predictions data: upcoming games with model and Vegas lines, the season simulation, and the next FBS slate."""
+
 from __future__ import annotations
 
 from typing import Any

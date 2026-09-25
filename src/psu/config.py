@@ -1,4 +1,5 @@
 """Project-wide settings: team, season range, paths, and API budget knobs."""
+
 from __future__ import annotations
 
 import os
@@ -10,6 +11,15 @@ from dotenv import load_dotenv
 
 TEAM = "Penn State"
 FIRST_SEASON = 2022  # last 5 seasons (2022-2026); lower this to pull more history
+
+# Tuned pipeline defaults, shared by the individual commands and `psu refresh`.
+GARBAGE = "38,28,22"  # Q2,Q3,Q4 garbage-time margins
+BUILD_ALPHA = 50.0  # ridge shrinkage for opponent adjustment
+TRAIN_ALPHA = 20.0  # ridge shrinkage for rolling team ratings
+SHRINK_PLAYS = 75  # plays before a season's own data outweighs last season
+SIM_N = 10_000  # simulated seasons
+SIM_SEED = 0
+SIM_TAU = 5.0  # spread (points) of each team's season-long strength draw
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
