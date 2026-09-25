@@ -54,6 +54,19 @@ def test_pairs_are_relative_to_each_season_mean():
     assert row["y"] == pytest.approx(finals[2023].loc[row["team"], "off_epa"] + 0.1)
 
 
+def test_fit_projection_does_not_invent_a_returning_effect_when_ret_is_constant():
+    """Every pair filled with the same value (e.g. the season median/default): x and x*ret are collinear."""
+    rng = np.random.default_rng(0)
+    n = MIN_PAIRS + 10
+    x = rng.normal(0, 0.1, n)
+    true_b0 = 0.4
+    y = true_b0 * x + rng.normal(0, 0.001, n)
+    pairs = pd.DataFrame({"season": 2024, "team": [f"T{i}" for i in range(n)], "x": x, "y": y, "ret": 0.5})
+    off = fit_projection(pairs, "off_epa")
+    assert off.b1 == 0.0
+    assert off.b0 == pytest.approx(true_b0, abs=0.02)
+
+
 def test_too_few_pairs_fall_back():
     finals, ret = synthetic(n=MIN_PAIRS - 1)
     assert fit_projection(projection_pairs(finals, MEANS, ret, "off_epa"), "off_epa") == Projection(FALLBACK_B0)

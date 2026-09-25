@@ -78,6 +78,12 @@ def fit_projection(pairs: pd.DataFrame, column: str) -> Projection:
         return Projection(FALLBACK_B0)
     x, y, ret = (pairs[c].to_numpy(float) for c in ("x", "y", "ret"))
     if column.startswith("off_"):
+        if np.ptp(ret) < 1e-9:
+            # Returning data is constant (e.g. every pair filled with the same median/default): x and x*ret
+            # are collinear, so lstsq would split the slope between b0 and b1 arbitrarily. Fit b0 alone.
+            denom = float(x @ x)
+            b0 = float(x @ y / denom) if denom > 0 else FALLBACK_B0
+            return Projection(b0)
         (b0, b1), *_ = np.linalg.lstsq(np.column_stack([x, x * ret]), y, rcond=None)
         return Projection(float(b0), float(b1))
     denom = float(x @ x)
