@@ -128,8 +128,9 @@ probability, compares itself with the closing Vegas line, and writes:
 - `data/reports/game_model.md` and `.json`: the backtest report.
 
 **Features** (home minus away): opponent-adjusted offensive and defensive EPA/play and success
-rate as of the game's week, last season's SP+ rating, the talent composite, rest days, and a
-home-field flag (0 at neutral sites).
+rate as of the game's week, last season's SP+ rating, the talent composite, rest days, a
+home-field flag (0 at neutral sites), and `d_returning` (the difference in returning offensive
+production, from CFBD's returning production endpoint).
 
 **No leakage:**
 - A game's team ratings are fit only on plays from earlier weeks of the same season. Early in the
@@ -179,9 +180,11 @@ For honest pregame numbers on past games, use the backtest report.
 ```
 
 `psu simulate --backfill`: after the normal run, replays each finished week of the current season into
-`sim_history` for the dashboard's "Odds over time" chart. It makes no API calls.
+`sim_history` for the dashboard's "Odds over time" chart. It makes no API calls. Each replayed week uses
+team ratings as of that week, but the model's coefficients are fitted with this season's results already
+in view, so replays are close to, but not exactly, what the model would have said at the time.
 
-Run `psu train` first. The simulator reads `game_predictions` and the model's sigma from
+Run `psu train` first. The simulator reads `game_predictions` and per-phase sigmas from
 `data/reports/game_model.json`. It makes no API calls, and a full run takes about 3 seconds.
 
 How it works:
