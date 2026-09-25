@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,7 +35,8 @@ class _MedianImputer(BaseEstimator, TransformerMixin):
 
     def fit(self, X, y=None):
         X = np.asarray(X, dtype=float)
-        with np.errstate(invalid="ignore"):
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # nanmedian warns "All-NaN slice" for all-NaN columns
             medians = np.nanmedian(X, axis=0)
         self.statistics_ = np.where(np.isnan(medians), 0.0, medians)
         return self

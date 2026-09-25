@@ -36,7 +36,7 @@ PREDICTION_COLUMNS = [
 ]
 
 # 2025 test-season scores before the model upgrade (preseason priors, phase sigmas), kept to show the change.
-BASELINE = {"model_mae": 12.52, "model_brier": 0.185, "vegas_mae": 11.82, "vegas_brier": 0.175}
+BASELINE = {"season": 2025, "model_mae": 12.52, "model_brier": 0.185, "vegas_mae": 11.82, "vegas_brier": 0.175}
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,7 @@ def report_markdown(report: dict) -> str:
         )
     lines += [
         "",
-        f"Before the model upgrade ({report['test_season']} test, all games): model MAE {BASELINE['model_mae']:.2f}, "
+        f"Before the model upgrade ({BASELINE['season']} test, all games): model MAE {BASELINE['model_mae']:.2f}, "
         f"Brier {BASELINE['model_brier']:.3f}; Vegas MAE {BASELINE['vegas_mae']:.2f}, "
         f"Brier {BASELINE['vegas_brier']:.3f}.",
     ]

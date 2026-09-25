@@ -83,7 +83,10 @@ st.subheader("Odds over time")
 history = load_or_note("predictions.sim_history", season, TEAM)
 if history is not None:
     if history.empty:
-        st.info("No simulation history yet. Run `psu simulate --backfill` to replay earlier weeks.")
+        if summary is not None and int(summary["season"]) == season:
+            st.info("No simulation history yet. Run `psu simulate --backfill` to replay earlier weeks.")
+        else:
+            st.info(f"No simulation history for {season}.")
     else:
         labels = {"p_cfp": "CFP", "p_conf_champ": "Big Ten champ", "p_title_game": "Title game"}
         long = history.melt(id_vars=["as_of_slate"], value_vars=list(labels), var_name="odds", value_name="prob")
