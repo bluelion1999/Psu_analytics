@@ -1,0 +1,37 @@
+# Penn State look for the dashboard: navy sidebar, Beaver-blue accents, light and dark variants.
+[theme]
+baseRadius = "medium"
+buttonRadius = "medium"
+showWidgetBorder = true
+font = "sans-serif"
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+
+[theme.light]
+primaryColor = "#1E407C"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F5FA"
+textColor = "#041E42"
+borderColor = "#D9E0EC"
+linkColor = "#1E407C"
+
+[theme.light.sidebar]
+backgroundColor = "#041E42"
+secondaryBackgroundColor = "#0D2B57"
+textColor = "#FFFFFF"
+borderColor = "#1E407C"
+primaryColor = "#96BEE6"
+
+[theme.dark]
+primaryColor = "#6E9BDF"
+backgroundColor = "#0B1426"
+secondaryBackgroundColor = "#13213B"
+textColor = "#E8EDF5"
+borderColor = "#22314F"
+linkColor = "#96BEE6"
+
+[theme.dark.sidebar]
+backgroundColor = "#041E42"
+secondaryBackgroundColor = "#0D2B57"
+textColor = "#FFFFFF"
+borderColor = "#1E407C"
+primaryColor = "#96BEE6"
