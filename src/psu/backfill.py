@@ -15,7 +15,7 @@ import joblib
 import pandas as pd
 
 from psu.config import TEAM
-from psu.features import assemble_features, frozen_ratings, rolling_ratings
+from psu.features import FEATURES, assemble_features, frozen_ratings, rolling_ratings
 from psu.simulate import (
     MissingModel,
     SimResult,
@@ -29,6 +29,22 @@ from psu.simulate import (
 from psu.train import load_feature_inputs
 
 PREDICTION_COLUMNS = ["game_id", "home_team", "away_team", "neutral_site", "pred_margin"]
+
+
+def _model_n_features(model) -> int | None:
+    """Number of input features the fitted pipeline expects, or None if it can't be determined."""
+    n = getattr(model.pipeline, "n_features_in_", None)
+    if n is not None:
+        return int(n)
+    imputer = model.pipeline.named_steps.get("impute")
+    statistics = getattr(imputer, "statistics_", None)
+    return None if statistics is None else len(statistics)
+
+
+def _check_model_features(model) -> None:
+    n = _model_n_features(model)
+    if n is not None and n != len(FEATURES):
+        raise MissingModel("saved model predates the current features; run `psu train` first")
 
 
 def replay_games(games: pd.DataFrame, as_of_slate: int) -> pd.DataFrame:
@@ -88,6 +104,7 @@ def backfill_history(
         raise MissingModel(f"{model_path} not found; run `psu train` first")
     sigmas = load_sigmas(out_dir)
     model = joblib.load(model_path)
+    _check_model_features(model)
     games, _ = load_inputs(con, season)
     inputs = load_feature_inputs(con)
     ratings = rolling_ratings(
