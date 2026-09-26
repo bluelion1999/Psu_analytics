@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from psu.features import ALL_FEATURES, DEFAULT_METRICS, FEATURES, METRICS
 
+FIRST_SEASON = 2019  # 2019 on (2020 is the COVID season); psu.config re-exports this for the rest of the project
 MODELS = ("select", "linear", "xgboost", "ensemble")
 # d_off_<m> / d_def_<m> -> the metric it needs
 _FEATURE_METRIC = {f"d_{side}_{m}": m for m in METRICS for side in ("off", "def")}
@@ -41,6 +42,12 @@ class ModelConfig:
             raise ValueError("A model config needs at least one feature")
         if any(w < 0 for _, w in self.season_weights):
             raise ValueError(f"Season weights must be >= 0, got {self.season_weights}")
+        if self.half_life is not None and self.half_life <= 0:
+            raise ValueError(f"half_life must be > 0 or None, got {self.half_life}")
+        if self.train_from <= FIRST_SEASON:
+            raise ValueError(
+                f"train_from must be after the first ingested season {FIRST_SEASON}, got {self.train_from}"
+            )
 
     def weight_of(self, season: int) -> float:
         return float(dict(self.season_weights).get(int(season), 1.0))

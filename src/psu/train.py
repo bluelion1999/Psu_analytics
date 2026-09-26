@@ -35,7 +35,7 @@ PREDICTION_COLUMNS = [
     "split",
 ]
 
-# 2025 test-season scores before the model upgrade (preseason priors, phase sigmas), kept to show the change.
+# 2025 test-season scores before model v2 (preseason priors, phase sigmas), kept to show the change.
 BASELINE = {"season": 2025, "model_mae": 12.52, "model_brier": 0.185, "vegas_mae": 11.82, "vegas_brier": 0.175}
 
 
@@ -130,7 +130,7 @@ def report_markdown(report: dict) -> str:
         )
     lines += [
         "",
-        f"Before the model upgrade ({BASELINE['season']} test, all games): model MAE {BASELINE['model_mae']:.2f}, "
+        f"Before model v2 ({BASELINE['season']} test, all games): model MAE {BASELINE['model_mae']:.2f}, "
         f"Brier {BASELINE['model_brier']:.3f}; Vegas MAE {BASELINE['vegas_mae']:.2f}, "
         f"Brier {BASELINE['vegas_brier']:.3f}.",
     ]
@@ -154,8 +154,11 @@ def report_markdown(report: dict) -> str:
 
 
 def _row_weights(frame: pd.DataFrame, cfg: ModelConfig) -> pd.Series | None:
-    """Per-row weight from cfg.season_weights, or None when every season weighs 1 (today's behaviour)."""
+    """Per-row weight from cfg.season_weights, zeroed below cfg.train_from; None when every weight is 1
+    (today's behaviour, when there's no season below train_from and no season_weights).
+    """
     w = frame["season"].map(cfg.weight_of).astype(float)
+    w = w.where(frame["season"] >= cfg.train_from, 0.0)
     return None if (w == 1.0).all() else w
 
 

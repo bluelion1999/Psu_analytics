@@ -9,10 +9,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from psu.modelconfig import ModelConfig
+from psu.modelconfig import FIRST_SEASON, ModelConfig
 
 TEAM = "Penn State"
-FIRST_SEASON = 2019  # 2019 on (2020 is the COVID season); lower this to pull more history
 
 # Tuned pipeline defaults, shared by the individual commands and `psu refresh`.
 GARBAGE = "38,28,22"  # Q2,Q3,Q4 garbage-time margins

@@ -151,6 +151,25 @@ def test_validate_rejects_unknown_feature_and_missing_metric():
         ModelConfig(metrics=("epa", "sr", "yards")).validate()
 
 
+def test_validate_rejects_a_non_positive_half_life():
+    ModelConfig(half_life=None).validate()
+    ModelConfig(half_life=4.0).validate()
+    with pytest.raises(ValueError, match="half_life"):
+        ModelConfig(half_life=0).validate()
+    with pytest.raises(ValueError, match="half_life"):
+        ModelConfig(half_life=-1.0).validate()
+
+
+def test_validate_rejects_train_from_at_or_before_the_first_season():
+    from psu.modelconfig import FIRST_SEASON
+
+    ModelConfig(train_from=FIRST_SEASON + 1).validate()
+    with pytest.raises(ValueError, match="train_from"):
+        ModelConfig(train_from=FIRST_SEASON).validate()
+    with pytest.raises(ValueError, match="train_from"):
+        ModelConfig(train_from=FIRST_SEASON - 1).validate()
+
+
 def test_walk_forward_validates_before_fitting(fit_spy):
     with pytest.raises(ValueError, match="Unknown feature"):
         ex.walk_forward(frame_2020_2025(), ModelConfig(features=("nope",)))
