@@ -1,4 +1,4 @@
-"""Command-line entry point: `psu ingest`, `status`, `build`, `train`, `simulate` and `refresh`."""
+"""Command-line entry point: `psu ingest`, `status`, `build`, `train`, `simulate`, `refresh` and `experiment`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 import duckdb
 
-from psu import config, db
+from psu import config, db, experiment
 from psu.backfill import backfill_history
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
@@ -262,6 +262,23 @@ def cmd_refresh(args: argparse.Namespace, settings: config.Settings) -> int:
     return 0
 
 
+def cmd_experiment(args: argparse.Namespace, settings: config.Settings) -> int:
+    """Walk-forward model experiments; writes reports/experiments.{md,json}, never game_predictions."""
+    con = db.connect(settings.db_path)
+    try:
+        if _no_plays(con):
+            return 2
+        try:
+            report = experiment.run(con, out_dir=settings.db_path.parent)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+    finally:
+        con.close()
+    print(experiment.report_markdown(report))
+    return 0
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace, config.Settings], int]] = {
     "status": cmd_status,
     "ingest": cmd_ingest,
@@ -269,6 +286,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, config.Settings], int]] = {
     "train": cmd_train,
     "simulate": cmd_simulate,
     "refresh": cmd_refresh,
+    "experiment": cmd_experiment,
 }
 
 
@@ -305,6 +323,10 @@ def build_parser() -> argparse.ArgumentParser:
     ref.add_argument("--max-calls", type=int, help="Stop ingest before making more than this many API calls")
     ref.add_argument("--sims", type=int, default=config.SIM_N, help="Number of simulated seasons")
     ref.add_argument("--seed", type=int, default=config.SIM_SEED, help="Random seed (same seed, same results)")
+    sub.add_parser(
+        "experiment",
+        help="Score model configurations with a 2023-2025 walk-forward backtest (no API calls; takes minutes)",
+    )
     return parser
 
 

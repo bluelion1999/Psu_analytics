@@ -354,3 +354,61 @@ def test_refresh_database_locked_mid_run_reports_the_step(settings, capsys, monk
     assert [c[0] for c in calls] == ["ingest", "build", "train"]
     err = capsys.readouterr().err
     assert "in use by another process" in err and "refresh stopped at train (exit 2)" in err
+
+
+def test_parser_has_experiment():
+    assert cli.build_parser().parse_args(["experiment"]).command == "experiment"
+
+
+def test_experiment_requires_ingested_data(settings, capsys):
+    assert cli.main(["experiment"]) == 2
+    assert "psu ingest" in capsys.readouterr().err
+
+
+def test_experiment_with_too_few_training_seasons_is_a_clean_error(settings, capsys):
+    from conftest import seed_raw_tables
+
+    from psu import db
+
+    con = db.connect(settings.db_path)
+    seed_raw_tables(con)  # 2024 only: no training seasons before 2023
+    con.close()
+    assert cli.main(["experiment"]) == 2
+    assert "training seasons before 2023" in capsys.readouterr().err
+
+
+def test_experiment_prints_the_report_and_never_writes_predictions(settings, capsys, monkeypatch):
+    from conftest import seed_raw_tables
+
+    from psu import db, experiment
+
+    con = db.connect(settings.db_path)
+    seed_raw_tables(con)
+    con.close()
+    report = {
+        "test_seasons": [2023],
+        "candidates": [
+            {
+                "name": "B0",
+                "stage": "B",
+                "reference": None,
+                "n": 1,
+                "mae": 10.0,
+                "early_mae": None,
+                "brier": 0.2,
+                "delta": None,
+                "adopted": None,
+            }
+        ],
+        "final": {"name": "B0", "config": {"model": "select"}},
+    }
+    monkeypatch.setattr(experiment, "run", lambda con, out_dir: report)
+    assert cli.main(["experiment"]) == 0
+    out = capsys.readouterr().out
+    assert "| B0 |" in out and "Final config: B0" in out
+    con = db.connect(settings.db_path)
+    try:
+        tables = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    finally:
+        con.close()
+    assert "game_predictions" not in tables
