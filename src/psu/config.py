@@ -10,7 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 TEAM = "Penn State"
-FIRST_SEASON = 2022  # last 5 seasons (2022-2026); lower this to pull more history
+FIRST_SEASON = 2019  # 2019 on (2020 is the COVID season); lower this to pull more history
 
 # Tuned pipeline defaults, shared by the individual commands and `psu refresh`.
 GARBAGE = "38,28,22"  # Q2,Q3,Q4 garbage-time margins
