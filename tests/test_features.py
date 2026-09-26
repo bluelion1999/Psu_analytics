@@ -8,6 +8,7 @@ from psu.features import (
     FEATURES,
     MAX_REST,
     assemble_features,
+    elo_as_of,
     frozen_ratings,
     game_features,
     league_means,
@@ -294,6 +295,31 @@ def test_assemble_emits_d_elo_and_extra_rating_diffs():
 
     without = assemble_features(ratings, games, lines, sp, talent)
     assert without["d_elo"].isna().all()
+
+
+def test_elo_as_of_freezes_future_elo_at_the_as_of_slate():
+    games = make_games(2024, schedule=[(1, "A", "B"), (3, "A", "C"), (5, "A", "D")])
+    games["home_pregame_elo"] = [1500.0, 1550.0, 1600.0]
+    games["away_pregame_elo"] = [1400.0, 1450.0, 1500.0]
+
+    frozen = elo_as_of(games, 2024, 3).set_index("id")
+    slate1, slate3, slate5 = 202400, 202401, 202402  # ids from make_games: season*100 + i
+    # before as_of_slate: unchanged
+    assert frozen.loc[slate1, "home_pregame_elo"] == 1500.0
+    assert frozen.loc[slate1, "away_pregame_elo"] == 1400.0
+    # A's first game at slate >= 3 is slate 3 itself, so its own row is unchanged too
+    assert frozen.loc[slate3, "home_pregame_elo"] == 1550.0
+    assert frozen.loc[slate3, "away_pregame_elo"] == 1450.0
+    # A's slate-5 row is frozen at A's slate-3 (as-of-3) value, not its own slate-5 value
+    assert frozen.loc[slate5, "home_pregame_elo"] == 1550.0
+    # D only plays at slate 5, so its as-of-3 value is its own (only) pregame Elo
+    assert frozen.loc[slate5, "away_pregame_elo"] == 1500.0
+
+    changed = games.copy()
+    changed.loc[changed["id"] == slate5, "home_pregame_elo"] = 9999.0
+    refrozen = elo_as_of(changed, 2024, 3).set_index("id")
+    pd.testing.assert_frame_equal(refrozen.loc[[slate1, slate3]], frozen.loc[[slate1, slate3]])
+    assert refrozen.loc[slate5, "home_pregame_elo"] == 1550.0  # not 9999
 
 
 def test_features_constant_unchanged():

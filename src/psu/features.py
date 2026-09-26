@@ -231,6 +231,37 @@ def frozen_ratings(ratings: pd.DataFrame, season: int, as_of_slate: int, snapsho
     return out
 
 
+def elo_as_of(games: pd.DataFrame, season: int, as_of_slate: int) -> pd.DataFrame:
+    """`games`, with every home/away pregame Elo at or after as_of_slate in `season` frozen at the value CFBD
+    would show for an unplayed game: the pregame Elo of the team's first game (by slate, then start_date) at
+    slate >= as_of_slate. Games before as_of_slate, and every other season, are unchanged.
+    """
+    out = games.copy()
+    if not {"home_pregame_elo", "away_pregame_elo"} <= set(out.columns):
+        return out
+    slates = slate_index(games)[["id", "slate"]]
+    g = out.merge(slates, on="id", how="left")
+    later = g[(g["season"] == season) & (g["slate"] >= as_of_slate)]
+    if later.empty:
+        return out
+    long = pd.concat(
+        [
+            later[["slate", "start_date", f"{side}_team", f"{side}_pregame_elo"]].rename(
+                columns={f"{side}_team": "team", f"{side}_pregame_elo": "elo"}
+            )
+            for side in ("home", "away")
+        ],
+        ignore_index=True,
+    ).sort_values(["slate", "start_date"])
+    as_of_elo = long.groupby("team")["elo"].first()
+    later_ids = set(later["id"])
+    mask = out["id"].isin(later_ids)
+    for side in ("home", "away"):
+        col = f"{side}_pregame_elo"
+        out.loc[mask, col] = out.loc[mask, f"{side}_team"].map(as_of_elo).to_numpy()
+    return out
+
+
 FEATURES = ["home_field", "d_off_epa", "d_def_epa", "d_off_sr", "d_def_sr", "d_prior_sp", "d_talent", "d_rest"]
 _OTHER_FEATURES = ["d_elo", "d_prior_sp", "d_talent", "d_rest"]
 ALL_FEATURES = ["home_field", *[f"d_{c}" for c in rating_columns(tuple(METRICS))], *_OTHER_FEATURES]

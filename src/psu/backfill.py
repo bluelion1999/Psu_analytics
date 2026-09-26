@@ -17,7 +17,15 @@ import joblib
 import pandas as pd
 
 from psu.config import TEAM
-from psu.features import DEFAULT_METRICS, FEATURES, assemble_features, frozen_ratings, ratings_as_of, rolling_ratings
+from psu.features import (
+    DEFAULT_METRICS,
+    FEATURES,
+    assemble_features,
+    elo_as_of,
+    frozen_ratings,
+    ratings_as_of,
+    rolling_ratings,
+)
 from psu.simulate import (
     MissingModel,
     SimResult,
@@ -160,7 +168,11 @@ def backfill_history(
             half_life=half_life,
         )
         feats = assemble_features(
-            frozen_ratings(ratings, season, n, snapshot), season_games, inputs.lines, inputs.sp, inputs.talent
+            frozen_ratings(ratings, season, n, snapshot),
+            elo_as_of(season_games, season, n),
+            inputs.lines,
+            inputs.sp,
+            inputs.talent,
         )
         feats = feats[feats["slate"] >= n]
         _check_model_features(model, feats.columns)
