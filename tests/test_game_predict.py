@@ -119,6 +119,21 @@ def test_backtest_folds_are_time_ordered(monkeypatch):
     json.dumps(report)  # the report is written as JSON
 
 
+def test_backtest_forwards_model_features_to_every_fit_call(monkeypatch):
+    seen_features = []
+    real_fit = gp.fit
+
+    def spy(train, kind, *, features=gp.FEATURES, **kwargs):
+        seen_features.append(tuple(features))
+        return real_fit(train, kind, features=features, **kwargs)
+
+    monkeypatch.setattr(gp, "fit", spy)
+    custom_features = [c for c in gp.FEATURES if c != "d_talent"]
+    gp.backtest(synthetic_features(), current_season=2026, model_features=custom_features)
+    assert seen_features  # at least the validation and final-model calls happened
+    assert all(f == tuple(custom_features) for f in seen_features)
+
+
 def test_ensemble_predicts_the_mean_of_its_members():
     f = synthetic_features()
     train = f[f["season"].isin([2023, 2024])]

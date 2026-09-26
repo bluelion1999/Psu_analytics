@@ -61,9 +61,9 @@ def test_final_model_trains_on_every_completed_game_after_the_first_season(tmp_p
     seen = []
     real_fit = gp.fit
 
-    def spy(train, kind):
+    def spy(train, kind, **kwargs):
         seen.append(set(train["season"]))
-        return real_fit(train, kind)
+        return real_fit(train, kind, **kwargs)
 
     monkeypatch.setattr(gp, "fit", spy)
     train_and_save(connect(":memory:"), synthetic_features(), current_season=2026, out_dir=tmp_path)

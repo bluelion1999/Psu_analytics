@@ -126,7 +126,7 @@ def _weighted_std(residuals: np.ndarray, w: np.ndarray | None) -> float:
         return float(np.std(residuals, ddof=1))
     w = np.asarray(w, dtype=float)
     mean = np.average(residuals, weights=w)
-    variance = np.average((residuals - mean) ** 2, weights=w)
+    variance = np.average((residuals - mean) ** 2, weights=w)  # population SD (no Bessel correction) when weighted
     return float(np.sqrt(variance))
 
 
@@ -230,7 +230,9 @@ def scores(actual, predicted, prob) -> dict:
     }
 
 
-def oos_residuals(played: pd.DataFrame, seasons: list[int], kind: str) -> pd.DataFrame:
+def oos_residuals(
+    played: pd.DataFrame, seasons: list[int], kind: str, *, features=FEATURES, weights: pd.Series | None = None
+) -> pd.DataFrame:
     """Walk-forward residuals: each season after the first, predicted by a model fitted on earlier seasons only."""
     frames = []
     for season in seasons[1:]:
@@ -238,7 +240,7 @@ def oos_residuals(played: pd.DataFrame, seasons: list[int], kind: str) -> pd.Dat
         scored = played[played["season"] == season]
         if train.empty or scored.empty:
             continue
-        model = fit(train, kind)
+        model = fit(train, kind, features=features, weights=weights)
         frames.append(
             pd.DataFrame(
                 {
@@ -326,19 +328,15 @@ def backtest(
         before = [s for s in seasons if s < eval_season]
         return played[played["season"].isin(before)], played[played["season"] == eval_season]
 
-    fit_kwargs = {}
-    if model_features is not FEATURES:
-        fit_kwargs["features"] = model_features
-    if weights is not None:
-        fit_kwargs["weights"] = weights
-
     train, valid = split(validate_season)
-    validation = {kind: _score_model(fit(train, kind, **fit_kwargs), valid) for kind in BASE_KINDS}
+    validation = {
+        kind: _score_model(fit(train, kind, features=model_features, weights=weights), valid) for kind in BASE_KINDS
+    }
     kind = min(BASE_KINDS, key=lambda k: validation[k]["mae"])
-    residuals = oos_residuals(played, seasons, kind)
+    residuals = oos_residuals(played, seasons, kind, features=model_features, weights=weights)
 
     train, test = split(test_season)
-    model = fit(train, kind, **fit_kwargs)
+    model = fit(train, kind, features=model_features, weights=weights)
     model.sigma_by_phase = phase_sigmas(residuals[residuals["season"] < test_season], model.sigma)
     vegas_sigma = _vegas_sigma(train)
 
