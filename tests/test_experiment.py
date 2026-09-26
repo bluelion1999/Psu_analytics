@@ -238,3 +238,46 @@ def test_run_writes_reports_with_a_row_per_candidate(tmp_path, monkeypatch):
     assert saved["final"] == json.loads(json.dumps(final))
     md = (tmp_path / "reports" / "experiments.md").read_text(encoding="utf-8")
     assert "| M1 |" in md and "Final config" in md
+
+
+def test_folds_without_enough_seasons_to_tune_or_validate_are_counted(caplog):
+    frame = frame_2020_2025()
+    with caplog.at_level("WARNING", logger="psu.experiment"):
+        tuned = ex.walk_forward(frame, ModelConfig(model="linear", tune=True, train_from=2022), test_seasons=(2023,))
+    assert tuned.attrs["fallback_folds"] == 1
+    assert ex.score(tuned)["fallback_folds"] == 1
+    assert "falls back" in caplog.text
+    selected = ex.walk_forward(frame, ModelConfig(train_from=2022), test_seasons=(2023,))
+    assert selected.attrs["fallback_folds"] == 1
+    enough = ex.walk_forward(frame, ModelConfig(model="linear"), test_seasons=(2023,))
+    assert enough.attrs["fallback_folds"] == 0
+
+
+def test_fallback_folds_reach_the_candidate_rows():
+    b0, m1 = ModelConfig(), ModelConfig(model="linear", tune=True)
+
+    def evaluate(cfg, ref):
+        return {**CANNED["D1"], "fallback_folds": 2}, CANNED["B0"], (-0.05, -0.1, 0.0)
+
+    _, rows = ex.select_stage(("B0", b0), [("M1", m1)], evaluate, stage="M")
+    assert rows[0]["fallback_folds"] == 2
+    report = {"test_seasons": [2023], "candidates": rows, "final": {"name": "M1", "config": ex.config_dict(m1)}}
+    assert "| yes | 2 |" in ex.report_markdown(report)
+
+
+def test_compare_requires_the_same_games():
+    preds = pd.DataFrame(
+        {
+            "game_id": [1, 2, 3],
+            "season": 2023,
+            "slate": [1, 2, 3],
+            "season_type": "regular",
+            "margin": [3.0, -7.0, 10.0],
+            "pred": [1.0, -2.0, 4.0],
+            "prob": [0.6, 0.4, 0.7],
+        }
+    )
+    cand_scores, ref_scores, delta = ex.compare(preds, preds.assign(pred=preds["pred"] + 1))
+    assert cand_scores["n"] == ref_scores["n"] == 3 and len(delta) == 3
+    with pytest.raises(ValueError, match="different games"):
+        ex.compare(preds, preds.iloc[:2])

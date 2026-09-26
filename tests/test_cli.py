@@ -412,3 +412,20 @@ def test_experiment_prints_the_report_and_never_writes_predictions(settings, cap
     finally:
         con.close()
     assert "game_predictions" not in tables
+
+
+def test_experiment_lets_unexpected_errors_propagate(settings, monkeypatch):
+    from conftest import seed_raw_tables
+
+    from psu import db, experiment
+
+    con = db.connect(settings.db_path)
+    seed_raw_tables(con)
+    con.close()
+
+    def broken(con, out_dir):
+        raise ValueError("a bug, not a data problem")
+
+    monkeypatch.setattr(experiment, "run", broken)
+    with pytest.raises(ValueError, match="a bug"):
+        cli.main(["experiment"])

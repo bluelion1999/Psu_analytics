@@ -77,6 +77,17 @@ def _choose_kind(train: pd.DataFrame, cfg: ModelConfig, weights: pd.Series | Non
     return min(gp.BASE_KINDS, key=lambda k: maes[k])
 
 
+def _fold_fallback(train: pd.DataFrame, cfg: ModelConfig) -> bool:
+    """True when a fold has too few training seasons to validate or tune, so a default is used instead.
+
+    `_choose_kind` needs 2 seasons (else linear); `gp.tune` needs 3 (else grid[0]); with "select" it tunes on
+    the inner seasons too, so it needs 4.
+    """
+    n = train["season"].nunique()
+    select = cfg.model == "select"
+    return (select and n < 2) or (cfg.tune and n < (4 if select else 3))
+
+
 def fit_config(train: pd.DataFrame, cfg: ModelConfig, weights: pd.Series | None = None) -> gp.GameModel:
     kind = _choose_kind(train, cfg, weights) if cfg.model == "select" else cfg.model
     return gp.fit(train, kind, features=cfg.features, params=_params(train, kind, cfg, weights), weights=weights)
@@ -87,6 +98,7 @@ def walk_forward(frame: pd.DataFrame, cfg: ModelConfig, test_seasons=TEST_SEASON
     cfg.validate()
     played = frame[frame["margin"].notna()]
     out = []
+    fallback_folds = 0
     for season in test_seasons:
         test = played[played["season"] == season]
         if test.empty:
@@ -94,6 +106,16 @@ def walk_forward(frame: pd.DataFrame, cfg: ModelConfig, test_seasons=TEST_SEASON
         train, weights = _training(played, cfg, season)
         if train.empty:
             raise ValueError(f"No training seasons before {season} for {cfg}")
+        if _fold_fallback(train, cfg):
+            fallback_folds += 1
+            log.warning(
+                "test season %s: only %d training season(s) for model %r (tune=%s); validation or tuning "
+                "falls back to defaults in this fold",
+                season,
+                train["season"].nunique(),
+                cfg.model,
+                cfg.tune,
+            )
         model = fit_config(train, cfg, weights)
         pred = model.predict_margin(test)
         out.append(
@@ -110,7 +132,9 @@ def walk_forward(frame: pd.DataFrame, cfg: ModelConfig, test_seasons=TEST_SEASON
             )
         )
     columns = ["game_id", "season", "slate", "season_type", "margin", "pred", "prob"]
-    return pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=columns)
+    result = pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=columns)
+    result.attrs["fallback_folds"] = fallback_folds
+    return result
 
 
 # --- scoring and comparison ---------------------------------------------------------------------------------
@@ -124,6 +148,7 @@ def score(pred_frame: pd.DataFrame) -> dict:
         "early_mae": _mae(early["margin"], early["pred"]) if len(early) else None,
         "brier": s["brier"],
         "n": s["n"],
+        "fallback_folds": int(pred_frame.attrs.get("fallback_folds", 0)),
     }
 
 
@@ -144,6 +169,16 @@ def paired_delta(ref: pd.DataFrame, cand: pd.DataFrame, *, n_boot: int = 2000, s
     return float(d.mean()), float(np.percentile(boots, 5)), float(np.percentile(boots, 95))
 
 
+def compare(ref: pd.DataFrame, cand: pd.DataFrame) -> tuple[dict, dict, tuple[float, float, float]]:
+    """(candidate scores, reference scores, paired delta), refusing frames that cover different games."""
+    if set(ref["game_id"]) != set(cand["game_id"]):
+        raise ValueError(
+            f"Candidate and reference predict different games ({len(set(cand['game_id']) ^ set(ref['game_id']))} "
+            "differ); the delta and the Brier guard must cover the same games"
+        )
+    return score(cand), score(ref), paired_delta(ref, cand)
+
+
 def adopt(ref_scores: dict, cand_scores: dict, delta) -> bool:
     delta_mean = delta[0] if isinstance(delta, (tuple, list)) else delta
     return bool(delta_mean <= ADOPT_DELTA + _EPS and cand_scores["brier"] <= ref_scores["brier"] + BRIER_GUARD + _EPS)
@@ -161,6 +196,7 @@ def _row(name: str, stage: str, reference: str | None, scores: dict, delta, adop
         "early_mae": scores["early_mae"],
         "brier": scores["brier"],
         "n": scores["n"],
+        "fallback_folds": int(scores.get("fallback_folds", 0)),
         "delta": None if delta is None else [float(x) for x in delta],
         "adopted": adopted,
     }
@@ -231,6 +267,10 @@ def _union(reference: ModelConfig, adopted: list[str], mae_of: dict[str, float])
     return cfg
 
 
+class NotEnoughSeasons(ValueError):
+    """Too few completed training seasons before the first test season."""
+
+
 def _check_training_seasons(con: duckdb.DuckDBPyConnection) -> None:
     first = con.execute(
         "SELECT MIN(season) FROM games WHERE completed OR (home_points IS NOT NULL AND away_points IS NOT NULL)"
@@ -238,7 +278,7 @@ def _check_training_seasons(con: duckdb.DuckDBPyConnection) -> None:
     start = ModelConfig().train_from if first is None else max(int(first), ModelConfig().train_from)
     n = TEST_SEASONS[0] - start
     if first is None or n < MIN_TRAIN_SEASONS:
-        raise ValueError(
+        raise NotEnoughSeasons(
             f"psu experiment needs at least {MIN_TRAIN_SEASONS} training seasons before {TEST_SEASONS[0]}, "
             f"counted from max(first completed season {first}, train_from {ModelConfig().train_from}); "
             f"have {max(n, 0)}. Ingest earlier seasons with `psu ingest`."
@@ -285,7 +325,7 @@ def run(con: duckdb.DuckDBPyConnection, *, out_dir: Path) -> dict:
 
     def evaluate(cfg: ModelConfig, ref: ModelConfig):
         cand, base = predict(cfg), predict(ref)
-        return score(cand), score(base), paired_delta(base, cand)
+        return compare(base, cand)
 
     b0 = ModelConfig()
     start = time.monotonic()
@@ -341,17 +381,20 @@ def report_markdown(report: dict) -> str:
         "",
         f"Walk-forward test seasons: {seasons}. Delta MAE is candidate minus reference (negative is better), "
         "with a 90% paired-bootstrap interval. A candidate is adopted when delta MAE <= "
-        f"{ADOPT_DELTA} and its Brier is at most {BRIER_GUARD} worse than the reference's.",
+        f"{ADOPT_DELTA} and its Brier is at most {BRIER_GUARD} worse than the reference's. "
+        "Fallback folds counts test seasons with too few training seasons to validate or tune, where defaults "
+        "were used instead.",
         "",
-        "| Candidate | Stage | Reference | N | MAE | Early MAE | Brier | Delta MAE [90% CI] | Adopted |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Candidate | Stage | Reference | N | MAE | Early MAE | Brier | Delta MAE [90% CI] | Adopted "
+        "| Fallback folds |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in report["candidates"]:
         delta = "-" if r["delta"] is None else f"{r['delta'][0]:+.3f} [{r['delta'][1]:+.3f}, {r['delta'][2]:+.3f}]"
         adopted = "baseline" if r["adopted"] is None else ("yes" if r["adopted"] else "no")
         lines.append(
             f"| {r['name']} | {r['stage']} | {r['reference'] or '-'} | {r['n']} | {_fmt(r['mae'], 3)} | "
-            f"{_fmt(r['early_mae'], 3)} | {_fmt(r['brier'], 4)} | {delta} | {adopted} |"
+            f"{_fmt(r['early_mae'], 3)} | {_fmt(r['brier'], 4)} | {delta} | {adopted} | {r.get('fallback_folds', 0)} |"
         )
     final = report["final"]
     lines += ["", f"Final config: {final['name']}", "", "```json", json.dumps(final["config"], indent=2), "```"]

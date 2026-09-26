@@ -270,7 +270,7 @@ def cmd_experiment(args: argparse.Namespace, settings: config.Settings) -> int:
             return 2
         try:
             report = experiment.run(con, out_dir=settings.db_path.parent)
-        except ValueError as e:
+        except experiment.NotEnoughSeasons as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
     finally:
