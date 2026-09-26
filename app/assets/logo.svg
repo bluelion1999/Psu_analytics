@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48">
+  <rect x="2" y="4" width="40" height="40" rx="9" fill="#1E407C"/>
+  <text x="22" y="31" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF">PS</text>
+  <text x="52" y="22" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF" letter-spacing="1">PENN STATE</text>
+  <text x="52" y="39" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#96BEE6" letter-spacing="2">ANALYTICS</text>
+</svg>
