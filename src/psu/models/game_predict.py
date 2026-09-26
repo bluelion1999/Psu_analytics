@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from itertools import product
 
 import numpy as np
 import pandas as pd
+import sklearn
 from scipy.stats import norm
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.linear_model import Ridge
@@ -17,7 +19,9 @@ from xgboost import XGBRegressor
 
 from psu.features import FEATURES
 
-MODEL_KINDS = ("linear", "xgboost")
+BASE_KINDS = ("linear", "xgboost")
+MODEL_KINDS = (*BASE_KINDS, "ensemble")
+_SKLEARN_SUPPORTS_PARAMS = tuple(int(p) for p in sklearn.__version__.split(".")[:2]) >= (1, 4)
 
 
 class _MedianImputer(BaseEstimator, TransformerMixin):
@@ -49,20 +53,23 @@ class _MedianImputer(BaseEstimator, TransformerMixin):
         return X
 
 
-def make_pipeline(kind: str) -> Pipeline:
+def make_pipeline(kind: str, params: dict | None = None) -> Pipeline:
+    params = params or {}
     if kind == "linear":
-        steps = [("scale", StandardScaler()), ("model", Ridge(alpha=1.0))]
+        steps = [("scale", StandardScaler()), ("model", Ridge(alpha=params.get("alpha", 1.0)))]
     elif kind == "xgboost":
-        steps = [
-            (
-                "model",
-                XGBRegressor(
-                    n_estimators=300, max_depth=3, learning_rate=0.05, subsample=0.8, random_state=0, n_jobs=1
-                ),
-            )
-        ]
+        xgb_params = {
+            "n_estimators": 300,
+            "max_depth": 3,
+            "learning_rate": 0.05,
+            "subsample": 0.8,
+            "random_state": 0,
+            "n_jobs": 1,
+            **params,
+        }
+        steps = [("model", XGBRegressor(**xgb_params))]
     else:
-        raise ValueError(f"kind must be one of {MODEL_KINDS}, got {kind!r}")
+        raise ValueError(f"kind must be one of {BASE_KINDS}, got {kind!r}")
     return Pipeline([("impute", _MedianImputer()), *steps])
 
 
@@ -85,12 +92,23 @@ def phase_of(season_type, slate) -> np.ndarray:
 @dataclass
 class GameModel:
     kind: str
-    pipeline: Pipeline
-    sigma: float
+    pipeline: Pipeline | None = None
+    sigma: float = 0.0
     sigma_by_phase: dict[str, float] | None = None
+    features: tuple[str, ...] = tuple(FEATURES)
+    params: dict | None = None
+    members: list[GameModel] | None = None
+
+    def __setstate__(self, state):
+        state.setdefault("features", tuple(FEATURES))
+        state.setdefault("params", None)
+        state.setdefault("members", None)
+        self.__dict__.update(state)
 
     def predict_margin(self, df: pd.DataFrame) -> np.ndarray:
-        return self.pipeline.predict(df[FEATURES])
+        if self.kind == "ensemble":
+            return np.mean([m.predict_margin(df) for m in self.members], axis=0)
+        return self.pipeline.predict(df[list(self.features)])
 
     def row_sigma(self, df: pd.DataFrame) -> np.ndarray:
         if not self.sigma_by_phase or not {"season_type", "slate"} <= set(df.columns):
@@ -102,11 +120,100 @@ class GameModel:
         return win_prob(self.predict_margin(df), self.row_sigma(df))
 
 
-def fit(train: pd.DataFrame, kind: str) -> GameModel:
-    x, y = train[FEATURES], train["margin"]
-    out_of_fold = cross_val_predict(make_pipeline(kind), x, y, cv=5)
-    sigma = float(np.std(y - out_of_fold, ddof=1))
-    return GameModel(kind, make_pipeline(kind).fit(x, y), sigma)
+def _weighted_std(residuals: np.ndarray, w: np.ndarray | None) -> float:
+    residuals = np.asarray(residuals, dtype=float)
+    if w is None:
+        return float(np.std(residuals, ddof=1))
+    w = np.asarray(w, dtype=float)
+    mean = np.average(residuals, weights=w)
+    variance = np.average((residuals - mean) ** 2, weights=w)
+    return float(np.sqrt(variance))
+
+
+def _fit_base(
+    train: pd.DataFrame, kind: str, features, params: dict | None, weights: pd.Series | None
+) -> tuple[Pipeline, np.ndarray, np.ndarray, np.ndarray | None]:
+    x, y = train[list(features)], train["margin"].to_numpy(dtype=float)
+    w = None if weights is None else weights.reindex(train.index).to_numpy(dtype=float)
+    if w is not None:
+        keep = w > 0
+        x, y, w = x[keep], y[keep], w[keep]
+    cv_kwargs = {}
+    fit_kwargs = {}
+    if w is not None:
+        fit_kwargs = {"model__sample_weight": w}
+        cv_kwargs[("params" if _SKLEARN_SUPPORTS_PARAMS else "fit_params")] = {"model__sample_weight": w}
+    out_of_fold = cross_val_predict(make_pipeline(kind, params), x, y, cv=5, **cv_kwargs)
+    fitted = make_pipeline(kind, params).fit(x, y, **fit_kwargs)
+    return fitted, y, out_of_fold, w
+
+
+def fit(
+    train: pd.DataFrame,
+    kind: str,
+    *,
+    features=FEATURES,
+    params: dict | None = None,
+    weights: pd.Series | None = None,
+) -> GameModel:
+    features = tuple(features)
+    if kind == "ensemble":
+        member_params = params or {}
+        linear_pipeline, y, linear_oof, w = _fit_base(train, "linear", features, member_params.get("linear"), weights)
+        xgb_pipeline, _, xgb_oof, _ = _fit_base(train, "xgboost", features, member_params.get("xgboost"), weights)
+        avg_oof = (linear_oof + xgb_oof) / 2
+        members = [
+            GameModel(
+                "linear",
+                linear_pipeline,
+                _weighted_std(y - linear_oof, w),
+                features=features,
+                params=member_params.get("linear"),
+            ),
+            GameModel(
+                "xgboost",
+                xgb_pipeline,
+                _weighted_std(y - xgb_oof, w),
+                features=features,
+                params=member_params.get("xgboost"),
+            ),
+        ]
+        return GameModel(
+            "ensemble",
+            None,
+            _weighted_std(y - avg_oof, w),
+            features=features,
+            params=params,
+            members=members,
+        )
+    pipeline, y, out_of_fold, w = _fit_base(train, kind, features, params, weights)
+    sigma = _weighted_std(y - out_of_fold, w)
+    return GameModel(kind, pipeline, sigma, features=features, params=params)
+
+
+LINEAR_GRID = [{"alpha": a} for a in (0.3, 1.0, 3.0, 10.0)]
+XGB_GRID = [
+    {"n_estimators": n, "max_depth": d, "learning_rate": lr, "min_child_weight": mcw}
+    for n, d, lr, mcw in product((300, 600), (2, 3, 4), (0.03, 0.06), (1, 5))
+]
+
+
+def tune(train: pd.DataFrame, kind: str, grid: list[dict], *, features=FEATURES, weights: pd.Series | None = None):
+    seasons = sorted(train["season"].unique())
+    if len(seasons) < 3:
+        return grid[0]
+    inner_seasons = seasons[2:]
+    mean_mae = []
+    for params in grid:
+        maes = []
+        for k in inner_seasons:
+            inner_train = train[train["season"].isin([s for s in seasons if s < k])]
+            inner_test = train[train["season"] == k]
+            model = fit(inner_train, kind, features=features, params=params, weights=weights)
+            predicted = model.predict_margin(inner_test)
+            maes.append(float(np.mean(np.abs(inner_test["margin"].to_numpy(float) - predicted))))
+        mean_mae.append(float(np.mean(maes)))
+    return grid[int(np.argmin(mean_mae))]
 
 
 def scores(actual, predicted, prob) -> dict:
@@ -201,7 +308,14 @@ def _score_model(model: GameModel, games: pd.DataFrame) -> dict:
     return scores(games["margin"], model.predict_margin(games), model.win_prob(games))
 
 
-def backtest(features: pd.DataFrame, current_season: int, team: str = "Penn State") -> dict:
+def backtest(
+    features: pd.DataFrame,
+    current_season: int,
+    team: str = "Penn State",
+    *,
+    model_features=FEATURES,
+    weights: pd.Series | None = None,
+) -> dict:
     seasons = usable_seasons(features, current_season)
     if len(seasons) < 3:
         raise ValueError(f"Need at least 3 complete seasons after the first; have {seasons}")
@@ -212,13 +326,19 @@ def backtest(features: pd.DataFrame, current_season: int, team: str = "Penn Stat
         before = [s for s in seasons if s < eval_season]
         return played[played["season"].isin(before)], played[played["season"] == eval_season]
 
+    fit_kwargs = {}
+    if model_features is not FEATURES:
+        fit_kwargs["features"] = model_features
+    if weights is not None:
+        fit_kwargs["weights"] = weights
+
     train, valid = split(validate_season)
-    validation = {kind: _score_model(fit(train, kind), valid) for kind in MODEL_KINDS}
-    kind = min(MODEL_KINDS, key=lambda k: validation[k]["mae"])
+    validation = {kind: _score_model(fit(train, kind, **fit_kwargs), valid) for kind in BASE_KINDS}
+    kind = min(BASE_KINDS, key=lambda k: validation[k]["mae"])
     residuals = oos_residuals(played, seasons, kind)
 
     train, test = split(test_season)
-    model = fit(train, kind)
+    model = fit(train, kind, **fit_kwargs)
     model.sigma_by_phase = phase_sigmas(residuals[residuals["season"] < test_season], model.sigma)
     vegas_sigma = _vegas_sigma(train)
 

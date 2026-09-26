@@ -29,9 +29,9 @@ def test_oos_residuals_never_train_on_the_season_they_score(monkeypatch):
     seen = []
     real_fit = gp.fit
 
-    def spy(train, kind):
+    def spy(train, kind, **kwargs):
         seen.append(set(train["season"]))
-        return real_fit(train, kind)
+        return real_fit(train, kind, **kwargs)
 
     monkeypatch.setattr(gp, "fit", spy)
     f = synthetic_features()
@@ -95,17 +95,17 @@ def test_backtest_folds_are_time_ordered(monkeypatch):
     seen = []
     real_fit = gp.fit
 
-    def spy(train, kind):
+    def spy(train, kind, **kwargs):
         seen.append(set(train["season"]))
-        return real_fit(train, kind)
+        return real_fit(train, kind, **kwargs)
 
     monkeypatch.setattr(gp, "fit", spy)
     report = gp.backtest(synthetic_features(), current_season=2026)
     assert (report["validation_season"], report["test_season"]) == (2024, 2025)
     assert report["train_seasons"] == [2023, 2024]
-    assert seen[: len(gp.MODEL_KINDS)] == [{2023}] * len(gp.MODEL_KINDS)
+    assert seen[: len(gp.BASE_KINDS)] == [{2023}] * len(gp.BASE_KINDS)
     assert seen[-1] == {2023, 2024}
-    assert report["model_kind"] in gp.MODEL_KINDS
+    assert report["model_kind"] in gp.BASE_KINDS
     for block in ("all", "early", "Penn State"):
         assert set(report["test"][block]) == {"model", "model_on_lined_games", "vegas"}
         assert report["test"][block]["model"]["n"] > 0
@@ -117,6 +117,79 @@ def test_backtest_folds_are_time_ordered(monkeypatch):
         cal = report["calibration"][source]
         assert 0 <= cal["ece"] <= 1 and sum(b["n"] for b in cal["bins"]) > 0
     json.dumps(report)  # the report is written as JSON
+
+
+def test_ensemble_predicts_the_mean_of_its_members():
+    f = synthetic_features()
+    train = f[f["season"].isin([2023, 2024])]
+    test = f[f["season"] == 2025].head(20)
+    model = gp.fit(train, "ensemble")
+    expected = np.mean([m.predict_margin(test) for m in model.members], axis=0)
+    assert np.allclose(model.predict_margin(test), expected)
+
+
+def test_custom_features_ignore_other_columns():
+    f = synthetic_features()
+    train = f[f["season"].isin([2023, 2024])]
+    test = f[f["season"] == 2025].head(20).drop(columns=["d_talent"])
+    model = gp.fit(train, "linear", features=[c for c in gp.FEATURES if c != "d_talent"])
+    predicted = model.predict_margin(test)
+    assert np.isfinite(predicted).all()
+
+
+def test_old_pickle_style_model_without_features_still_predicts():
+    f = synthetic_features()
+    model = gp.fit(f[f["season"].isin([2023, 2024])], "linear")
+    del model.features
+    assert "features" not in model.__dict__
+    predicted = model.predict_margin(f[f["season"] == 2025].head(5))
+    assert np.isfinite(predicted).all()
+
+
+def test_zero_weight_season_matches_dropping_that_season():
+    f = synthetic_features()
+    train = f[f["season"].isin([2023, 2024, 2025])]
+    weights = pd.Series(1.0, index=train.index)
+    weights[train["season"] == 2023] = 0.0
+    weighted_model = gp.fit(train, "linear", weights=weights)
+    dropped_model = gp.fit(train[train["season"] != 2023], "linear")
+    weighted_coef = weighted_model.pipeline.named_steps["model"].coef_
+    dropped_coef = dropped_model.pipeline.named_steps["model"].coef_
+    assert np.allclose(weighted_coef, dropped_coef)
+
+
+def test_tune_never_sees_rows_from_seasons_it_is_scoring_on(monkeypatch):
+    seen = []
+    real_fit = gp.fit
+
+    def spy(train, kind, **kwargs):
+        seen.append(set(train["season"]))
+        return real_fit(train, kind, **kwargs)
+
+    monkeypatch.setattr(gp, "fit", spy)
+    f = synthetic_features()
+    train = f[f["season"].isin([2022, 2023, 2024, 2025])]
+    gp.tune(train, "linear", gp.LINEAR_GRID[:2], features=gp.FEATURES)
+    # inner seasons scored are 2024 and 2025; each fit must only see strictly earlier seasons
+    assert seen == [{2022, 2023}, {2022, 2023, 2024}] * 2
+
+
+def test_tune_picks_the_better_alpha_on_synthetic_data():
+    rng = np.random.default_rng(0)
+    n_per_season = 200
+    rows = []
+    for season in (2022, 2023, 2024, 2025):
+        x = rng.normal(size=n_per_season)
+        y = 10 * x + rng.normal(scale=0.5, size=n_per_season)
+        for xi, yi in zip(x, y, strict=True):
+            rows.append({"season": season, "d_off_epa": xi, "margin": yi})
+    train = pd.DataFrame(rows)
+    for c in gp.FEATURES:
+        if c not in train.columns:
+            train[c] = 0.0
+    grid = [{"alpha": 0.01}, {"alpha": 1000.0}]
+    best = gp.tune(train, "linear", grid, features=["d_off_epa"])
+    assert best == {"alpha": 0.01}
 
 
 def test_backtest_needs_three_complete_seasons():
