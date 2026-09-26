@@ -44,7 +44,7 @@ and pull request into `main`. To hide the one-time format commit from `git blame
 
 ```powershell
 .venv\Scripts\psu ingest --seasons 2024        # one season (~60 API calls)
-.venv\Scripts\psu ingest --seasons 2022-2026   # everything (~295 calls the first time)
+.venv\Scripts\psu ingest --seasons 2019-2026   # everything (2019-2021 cost about 180 calls)
 .venv\Scripts\psu status                       # row counts per table
 ```
 
@@ -53,8 +53,9 @@ and pull request into `main`. To hide the one-time format commit from `git blame
   started are skipped, and a week is treated as final 3 days after it ends.
 - The CFBD free tier has a monthly call limit. Each run stops before it exceeds `--max-calls`
   (default 300, or `PSU_MAX_CALLS` in `.env`). Whatever was fetched is kept, so re-running continues
-  where it stopped. A full 2022–2026 pull (~295 calls) fits in one default run. To pull more
-  history, lower `FIRST_SEASON` in `src/psu/config.py` (about 60 calls per extra season).
+  where it stopped. `FIRST_SEASON` in `src/psu/config.py` is 2019 (2020 is the COVID season); pulling
+  2019–2021 cost about 180 calls (about 60 per season), so a full 2019–2026 pull fits in one default
+  run. Lower `FIRST_SEASON` further to pull even more history.
 - Data lands in `data/psu.duckdb`: `games`, `plays`, `drives`, `team_game_stats`,
   `player_game_stats`, `advanced_season`, `ratings_sp`, `talent`, `recruiting`, `lines`. Game-level
   stats are stored long (one row per team/stat or player/stat). Start dates are UTC.
@@ -125,10 +126,12 @@ probability, compares itself with the closing Vegas line, and writes:
 - `game_predictions` (DuckDB): `pred_margin` and `home_win_prob` for every game, including
   upcoming ones, next to `vegas_margin` and the actual `margin`.
 - `data/models/game_model.joblib`: the fitted model.
-- `data/reports/game_model.md` and `.json`: the backtest report.
+- `data/reports/game_model.md` and `.json`: the backtest report, including the `ModelConfig` it ran
+  with (see "Model experiments" below).
 
 **Features** (home minus away): opponent-adjusted offensive and defensive EPA/play and success
-rate as of the game's week, last season's SP+ rating, the talent composite, rest days, and a
+rate as of the game's week, opponent-adjusted offensive and defensive explosive-play rate, the
+CFBD pregame Elo difference, last season's SP+ rating, the talent composite, rest days, and a
 home-field flag (0 at neutral sites).
 
 **No leakage:**
@@ -136,17 +139,21 @@ home-field flag (0 at neutral sites).
   season they are blended with last season's final ratings. `--shrink-plays` sets how many plays it
   takes for the current season to dominate.
 - SP+ comes from the previous season, because CFBD's same-season SP+ reflects the whole season.
-- Evaluation is strictly time-based. The first season in the data (2022) serves only as a prior.
+- Evaluation is strictly time-based. The first season in the data (2020) serves only as a prior.
 
 Returning production is ingested from CFBD (one call per season, refreshed weekly) but is not yet
 used by the model; a projected preseason prior and a returning-production feature were tried and
 made predictions worse, so they were removed (see the model-upgrade design doc's Outcome section).
 
 **Evaluation:**
-- Validation trains on 2023 and evaluates on 2024; this picks the model (linear beat XGBoost) and
-  the tuning.
-- Test trains on 2023–2024 and evaluates on 2025, which was never used for any choice.
-- The final model is refit on every completed game from 2023 onward.
+- Validation trains on 2020–2023 and evaluates on 2024; this picks the model (linear 12.77 beat
+  XGBoost 12.81) and the tuning.
+- Test trains on 2020–2024 and evaluates on 2025.
+- The final model is refit on every completed game from 2020 onward (4,636 games).
+
+`psu experiment` (see "Model experiments" below) also used 2023–2025 as its walk-forward test
+seasons to choose the feature set, so the 2025 test number below is mildly optimistic: 2025 was not
+held out from every choice, only from the model and tuning choice.
 
 Win probability is `NormalCDF(margin / sigma)`, with sigma taken from out-of-fold residuals.
 Win probabilities use separate sigmas for weeks 1–4, week 5 on, and the postseason.
@@ -156,13 +163,20 @@ Win probabilities use separate sigmas for weeks 1–4, week 5 on, and the postse
 
 | Games | N | Model MAE | Vegas MAE | Model Brier | Vegas Brier |
 |---|---|---|---|---|---|
-| All FBS vs FBS | 808 | 12.52 | 11.82 | 0.185 | 0.175 |
-| Penn State | 12 | 7.84 | 12.69 | 0.194 | 0.239 |
+| All FBS vs FBS | 808 | 12.33 | 11.82 | 0.181 | 0.175 |
+| Penn State | 12 | 9.66 | 12.69 | 0.221 | 0.239 |
 
-The closing line is still about 0.7 points more accurate overall, as expected against a
+The closing line is still about 0.5 points more accurate overall, as expected against a
 market-efficient baseline. The Penn State edge is 12 games, which is too few to read into. On the
-2025 test season, the model's predictions correlate 0.91 with Vegas's. Its average home-win
-probability is 0.584, against an actual home-win rate of 0.595.
+2025 test season, the model's predictions correlate 0.94 with Vegas's. Its average home-win
+probability is 0.570, against an actual home-win rate of 0.595.
+
+**Model experiments:** `psu experiment` walk-forward tested candidate changes over 2023–2025
+(2,398 games). Adding the pregame Elo difference and opponent-adjusted explosive-play ratings to
+the previous feature set cut MAE from 12.75 to 12.57 (and Brier from 0.1889 to 0.1841); that's the
+feature set trained above. Tried and not adopted: shrinking or reweighting the 2020 data window,
+rush/pass EPA splits, recency weighting (half-life), tuned hyperparameters and the linear+XGBoost
+ensemble. See `data/reports/experiments.md` for the full candidate table.
 
 The `split` column in `game_predictions` says which rows are genuine pregame predictions:
 - `upcoming`: not played yet. This is a true forecast.
@@ -240,3 +254,25 @@ Notes:
   It isn't a play-level model.
 - Player tables use box-score efficiency. Plays don't name players, so per-player EPA isn't available.
 - Set `PSU_DB_PATH` to point the dashboard at a different database file.
+
+## Model experiments
+
+```powershell
+.venv\Scripts\psu experiment   # walk-forward search over data window, features and model; no API calls
+```
+
+`psu train` and `psu simulate --backfill` follow `config.MODEL_CONFIG`, a `ModelConfig`: the feature
+list, model kind (`select` picks linear vs. XGBoost on validation MAE, as before), hyperparameters,
+whether to tune, the first training season (`train_from`), per-season weights, the rating metrics
+and their recency half-life. History is ingested from 2019 on (`FIRST_SEASON` in `src/psu/config.py`;
+2020 is the COVID season), which gives `psu experiment` more seasons to train on than `MODEL_CONFIG`'s
+default `train_from` of 2020 actually uses.
+
+`psu experiment` scores candidate configurations with a walk-forward backtest: each candidate trains
+only on seasons before 2023, 2024 and 2025 in turn, and is scored on that test season's completed
+games. Candidates are compared with a paired bootstrap of the per-game error difference and adopted
+only if they lower MAE by at least 0.02 without worsening the Brier score by more than 0.0005. It
+proceeds in stages: D (the training-data window and season weights), F (added features and rating
+recency), then M (model kind, tuned). The result is `data/reports/experiments.md` and `.json`, with
+every candidate's scores and the final chosen config. Adopting a winner means updating
+`config.MODEL_CONFIG` by hand and re-running `psu train`.
