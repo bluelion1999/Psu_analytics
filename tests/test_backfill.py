@@ -137,22 +137,45 @@ class _StubImputer:
 @dataclass
 class _StubModel:
     pipeline: _StubPipeline
+    features: tuple[str, ...] | None = None
+    kind: str = "linear"
+    members: list | None = None
 
 
-def test_check_model_features_accepts_a_pipeline_with_n_features_in_matching_current_features():
-    from psu.features import FEATURES
-
-    _check_model_features(_StubModel(_StubPipeline(n_features_in_=len(FEATURES))))  # does not raise
+def test_check_model_features_accepts_a_pipeline_matching_its_own_feature_list():
+    model = _StubModel(_StubPipeline(n_features_in_=3), features=("a", "b", "c"))
+    _check_model_features(model)  # does not raise
 
 
 def test_check_model_features_rejects_a_stale_model_via_n_features_in_():
+    model = _StubModel(_StubPipeline(n_features_in_=3), features=("a", "b", "c", "d"))
     with pytest.raises(MissingModel, match="run `psu train` first"):
-        _check_model_features(_StubModel(_StubPipeline(n_features_in_=3)))
+        _check_model_features(model)
 
 
 def test_check_model_features_falls_back_to_imputer_statistics_when_n_features_in_is_absent():
-    from psu.features import FEATURES
-
-    _check_model_features(_StubModel(_StubPipeline(statistics_len=len(FEATURES))))  # does not raise
+    model = _StubModel(_StubPipeline(statistics_len=3), features=("a", "b", "c"))
+    _check_model_features(model)  # does not raise
+    bad = _StubModel(_StubPipeline(statistics_len=3), features=("a", "b"))
     with pytest.raises(MissingModel, match="run `psu train` first"):
-        _check_model_features(_StubModel(_StubPipeline(statistics_len=3)))
+        _check_model_features(bad)
+
+
+def test_check_model_features_accepts_a_ten_feature_model_with_a_matching_pipeline():
+    features = tuple(f"f{i}" for i in range(10))
+    model = _StubModel(_StubPipeline(n_features_in_=10), features=features)
+    _check_model_features(model)  # does not raise
+
+
+def test_check_model_features_rejects_a_ten_wide_pipeline_whose_feature_list_claims_eight():
+    features = tuple(f"f{i}" for i in range(8))
+    model = _StubModel(_StubPipeline(n_features_in_=10), features=features)
+    with pytest.raises(MissingModel, match="run `psu train` first"):
+        _check_model_features(model)
+
+
+def test_check_model_features_rejects_a_feature_list_naming_a_column_the_frame_lacks():
+    model = _StubModel(_StubPipeline(n_features_in_=3), features=("a", "b", "c"))
+    _check_model_features(model, ["a", "b", "c", "extra"])  # does not raise
+    with pytest.raises(MissingModel, match="run `psu train` first"):
+        _check_model_features(model, ["a", "b"])  # missing "c"

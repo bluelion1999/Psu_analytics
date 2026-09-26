@@ -33,20 +33,33 @@ from psu.train import load_feature_inputs
 PREDICTION_COLUMNS = ["game_id", "home_team", "away_team", "neutral_site", "pred_margin"]
 
 
-def _model_n_features(model) -> int | None:
-    """Number of input features the fitted pipeline expects, or None if it can't be determined."""
-    n = getattr(model.pipeline, "n_features_in_", None)
+def _model_n_features(pipeline) -> int | None:
+    """Number of input features a fitted pipeline expects, or None if it can't be determined."""
+    n = getattr(pipeline, "n_features_in_", None)
     if n is not None:
         return int(n)
-    imputer = model.pipeline.named_steps.get("impute")
+    imputer = pipeline.named_steps.get("impute")
     statistics = getattr(imputer, "statistics_", None)
     return None if statistics is None else len(statistics)
 
 
-def _check_model_features(model) -> None:
-    n = _model_n_features(model)
-    if n is not None and n != len(FEATURES):
-        raise MissingModel("saved model predates the current features; run `psu train` first")
+def _check_model_features(model, columns=None) -> None:
+    """A saved model is stale when it can't predict from the frame backfill builds.
+
+    Its (or, for an ensemble, each member's) fitted pipeline width must match its own `features` list
+    (falling back to the module default for pickles predating that attribute); and, when `columns` is
+    given, every name in `features` must actually be a column of the assembled feature frame.
+    """
+    members = model.members if getattr(model, "kind", None) == "ensemble" and model.members else [model]
+    for member in members:
+        features = getattr(member, "features", None) or FEATURES
+        n = _model_n_features(member.pipeline)
+        if n is not None and n != len(features):
+            raise MissingModel("saved model predates the current features; run `psu train` first")
+    if columns is not None:
+        features = getattr(model, "features", None) or FEATURES
+        if any(f not in columns for f in features):
+            raise MissingModel("saved model predates the current features; run `psu train` first")
 
 
 def replay_games(games: pd.DataFrame, as_of_slate: int) -> pd.DataFrame:
@@ -150,6 +163,7 @@ def backfill_history(
             frozen_ratings(ratings, season, n, snapshot), season_games, inputs.lines, inputs.sp, inputs.talent
         )
         feats = feats[feats["slate"] >= n]
+        _check_model_features(model, feats.columns)
         return feats.assign(pred_margin=model.predict_margin(feats))[PREDICTION_COLUMNS]
 
     results = simulate_as_of(
