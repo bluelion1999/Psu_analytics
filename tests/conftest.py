@@ -226,7 +226,9 @@ def synthetic_features(seed=0, games_per_season=240):
     import numpy as np
     import pandas as pd
 
-    from psu.features import FEATURES
+    from psu.features import ALL_FEATURES, FEATURES
+
+    extra_features = [c for c in ALL_FEATURES if c not in FEATURES]
 
     rng = np.random.default_rng(seed)
     teams = [f"T{i}" for i in range(30)] + ["Penn State"]
@@ -236,6 +238,7 @@ def synthetic_features(seed=0, games_per_season=240):
             game_id += 1
             home, away = rng.choice(teams, 2, replace=False)
             x = {c: float(rng.normal()) for c in FEATURES}
+            x.update({c: float(rng.normal()) for c in extra_features})
             x["home_field"] = float(rng.random() < 0.9)
             signal = 8 * x["d_off_epa"] - 6 * x["d_def_epa"] + 4 * x["d_prior_sp"] + 2.5 * x["home_field"]
             completed = season < 2026 or i < games_per_season // 2
