@@ -24,7 +24,7 @@ def test_ingest_without_key_or_cache_explains_how_to_fix(settings, capsys):
 
 def test_bad_season_spec_is_a_usage_error(settings, capsys):
     assert cli.main(["ingest", "--seasons", "2031"]) == 2
-    assert "2022-2026" in capsys.readouterr().err
+    assert f"{config.FIRST_SEASON}-{settings.current_season}" in capsys.readouterr().err
 
 
 def test_status_lists_all_tables(settings, capsys):
