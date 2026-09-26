@@ -3,8 +3,11 @@ import pandas as pd
 import pytest
 
 from psu.features import (
+    ALL_FEATURES,
+    DEFAULT_METRICS,
     FEATURES,
     MAX_REST,
+    assemble_features,
     frozen_ratings,
     game_features,
     league_means,
@@ -217,3 +220,92 @@ def test_ratings_as_of_includes_a_bye_team_latest_game():
 
     pd.testing.assert_series_equal(snapshot_at_4.loc["A"], expected, check_names=False)
     assert not snapshot_at_4.loc["A"].equals(slate_3_row)  # it must include the slate-3 game, not just be stale
+
+
+ALL_METRICS = ("epa", "sr", "expl", "rush_epa", "pass_epa")
+
+
+def make_rich_plays(games, n=20, seed=0):
+    plays = make_plays(games, n=n, seed=seed)
+    i = np.arange(len(plays))
+    return plays.assign(play_class=np.where(i % 2, "rush", "pass"), explosive=plays["ppa"] > 0.3)
+
+
+def test_default_metrics_output_is_unchanged():
+    games = make_games(2024)
+    plays = make_plays(games)
+    base = rolling_ratings(plays, games, alpha=1.0, shrink_plays=10)
+    explicit = rolling_ratings(plays, games, alpha=1.0, shrink_plays=10, metrics=DEFAULT_METRICS, half_life=None)
+    pd.testing.assert_frame_equal(base, explicit)
+    assert list(base.columns) == ["season", "slate", "team", "off_epa", "def_epa", "off_sr", "def_sr"]
+
+
+def test_new_metric_ratings_use_only_earlier_slates():
+    games = make_games(2024)
+    plays = make_rich_plays(games)
+    kw = {"alpha": 1.0, "shrink_plays": 10, "metrics": ALL_METRICS}
+    base = rolling_ratings(plays, games, **kw)
+    assert {"off_expl", "def_expl", "off_rush_epa", "def_pass_epa"} <= set(base.columns)
+
+    late = plays.copy()
+    in_slate_3 = late["game_id"].isin(games.loc[games["week"] == 3, "id"])
+    late.loc[in_slate_3, "ppa"] = 100.0
+    late.loc[in_slate_3, "explosive"] = True
+    late.loc[in_slate_3, "success"] = True
+    pd.testing.assert_frame_equal(base, rolling_ratings(late, games, **kw))
+
+
+def test_infinite_half_life_matches_unweighted():
+    g23, g24 = make_games(2023), make_games(2024)
+    games = pd.concat([g23, g24], ignore_index=True)
+    plays = pd.concat([make_rich_plays(g23), make_rich_plays(g24, seed=1)], ignore_index=True)
+    kw = {"alpha": 1.0, "shrink_plays": 10, "metrics": ALL_METRICS}
+    unweighted = rolling_ratings(plays, games, **kw, half_life=None)
+    weighted = rolling_ratings(plays, games, **kw, half_life=1e12)
+    pd.testing.assert_frame_equal(unweighted, weighted, check_exact=False, atol=1e-9, rtol=0)
+
+
+def test_recency_weighting_favours_recent_games():
+    games = make_games(2024)
+    plays = make_plays(games)
+    week = plays["game_id"].map(games.set_index("id")["week"])
+    a_off = plays["offense"] == "A"
+    plays.loc[a_off & (week == 1), "ppa"] = 2.0  # great in slate 1
+    plays.loc[a_off & (week == 2), "ppa"] = -2.0  # awful in slate 2
+    kw = {"alpha": 1.0, "shrink_plays": 10}
+    flat = rolling_ratings(plays, games, **kw).set_index(["season", "slate", "team"])
+    recent = rolling_ratings(plays, games, **kw, half_life=1).set_index(["season", "slate", "team"])
+    assert recent.loc[(2024, 3, "A"), "off_epa"] < flat.loc[(2024, 3, "A"), "off_epa"]
+
+
+def test_assemble_emits_d_elo_and_extra_rating_diffs():
+    games = make_games(2024)
+    plays = make_rich_plays(games)
+    ratings = rolling_ratings(plays, games, alpha=1.0, shrink_plays=10, metrics=("epa", "sr", "expl"))
+    lines = pd.DataFrame({"game_id": pd.Series([], dtype=int), "spread": pd.Series([], dtype=float)})
+    sp = pd.DataFrame({"year": [2023], "team": ["A"], "rating": [1.0]})
+    talent = pd.DataFrame({"year": [2024], "team": ["A"], "talent": [900.0]})
+
+    with_elo = games.assign(home_pregame_elo=1600, away_pregame_elo=1500)
+    f = assemble_features(ratings, with_elo, lines, sp, talent)
+    assert (f["d_elo"] == 100).all()
+    assert "d_off_expl" in f.columns and "d_def_expl" in f.columns
+    assert set(FEATURES) <= set(f.columns)
+
+    without = assemble_features(ratings, games, lines, sp, talent)
+    assert without["d_elo"].isna().all()
+
+
+def test_features_constant_unchanged():
+    assert FEATURES == [
+        "home_field",
+        "d_off_epa",
+        "d_def_epa",
+        "d_off_sr",
+        "d_def_sr",
+        "d_prior_sp",
+        "d_talent",
+        "d_rest",
+    ]
+    assert set(FEATURES) <= set(ALL_FEATURES)
+    assert "d_elo" in ALL_FEATURES and "d_off_rush_epa" in ALL_FEATURES

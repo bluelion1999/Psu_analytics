@@ -47,11 +47,25 @@ class FeatureInputs:
     talent: pd.DataFrame
 
 
+_ELO_COLUMNS = ("home_pregame_elo", "away_pregame_elo")
+
+
+def _elo_select(con: duckdb.DuckDBPyConnection) -> str:
+    """Select the pregame Elo columns, or typed NULLs when an older database's games table lacks them."""
+    present = {
+        row[0]
+        for row in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'games'"
+        ).fetchall()
+    }
+    return ", ".join(c if c in present else f"CAST(NULL AS DOUBLE) AS {c}" for c in _ELO_COLUMNS)
+
+
 def load_feature_inputs(con: duckdb.DuckDBPyConnection) -> FeatureInputs:
     plays = con.execute(f"SELECT {_PLAY_COLUMNS} FROM plays").df()
     games = con.execute(
         "SELECT id, season, week, season_type, start_date, neutral_site, completed, home_team, away_team, "
-        "home_classification, away_classification, home_points, away_points FROM games"
+        f"home_classification, away_classification, home_points, away_points, {_elo_select(con)} FROM games"
     ).df()
     drives = con.execute("SELECT id, offense, start_offense_score, start_defense_score FROM drives").df()
     return FeatureInputs(
