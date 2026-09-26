@@ -26,7 +26,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Production model configuration. `psu train` and `psu simulate --backfill` follow this; `psu experiment`
 # searches for a better one and, once adopted, this is updated to match.
-MODEL_CONFIG = ModelConfig()
+# Adopted from `psu experiment` (2023-2025 walk-forward, 2,398 games): pregame Elo and explosive-play ratings
+# cut MAE 12.75 -> 12.57 and Brier 0.1889 -> 0.1841 over the previous features. See data/reports/experiments.md.
+MODEL_CONFIG = ModelConfig(
+    features=(*ModelConfig().features, "d_elo", "d_off_expl", "d_def_expl"),
+    metrics=("epa", "sr", "expl"),
+)
 
 
 def current_season(today: date | None = None) -> int:
