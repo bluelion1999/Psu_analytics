@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import duckdb
@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 
 from psu.build import _PLAY_COLUMNS
-from psu.config import SHRINK_PLAYS, TEAM, TRAIN_ALPHA
+from psu.config import MODEL_CONFIG, SHRINK_PLAYS, TEAM, TRAIN_ALPHA
 from psu.features import game_features
+from psu.modelconfig import ModelConfig
 from psu.models import game_predict as gp
 from psu.transform import enrich_plays
 
@@ -77,9 +78,21 @@ def load_feature_inputs(con: duckdb.DuckDBPyConnection) -> FeatureInputs:
     )
 
 
-def load_features(con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75) -> pd.DataFrame:
+def load_features(
+    con: duckdb.DuckDBPyConnection, *, alpha: float = 20.0, shrink_plays: int = 75, cfg: ModelConfig = MODEL_CONFIG
+) -> pd.DataFrame:
     i = load_feature_inputs(con)
-    return game_features(i.enriched, i.games, i.lines, i.sp, i.talent, alpha=alpha, shrink_plays=shrink_plays)
+    return game_features(
+        i.enriched,
+        i.games,
+        i.lines,
+        i.sp,
+        i.talent,
+        alpha=alpha,
+        shrink_plays=shrink_plays,
+        metrics=cfg.metrics,
+        half_life=cfg.half_life,
+    )
 
 
 def _fmt(value, digits: int) -> str:
@@ -140,6 +153,12 @@ def report_markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _row_weights(frame: pd.DataFrame, cfg: ModelConfig) -> pd.Series | None:
+    """Per-row weight from cfg.season_weights, or None when every season weighs 1 (today's behaviour)."""
+    w = frame["season"].map(cfg.weight_of).astype(float)
+    return None if (w == 1.0).all() else w
+
+
 def train_and_save(
     con: duckdb.DuckDBPyConnection,
     features: pd.DataFrame,
@@ -149,14 +168,24 @@ def train_and_save(
     team: str = TEAM,
     alpha: float = TRAIN_ALPHA,
     shrink_plays: int = SHRINK_PLAYS,
+    cfg: ModelConfig = MODEL_CONFIG,
 ) -> dict:
-    report = gp.backtest(features, current_season, team=team)
-    train = gp.training_rows(features)
-    model = gp.fit(train, report["model_kind"])
+    from psu.experiment import fit_config, training  # local import: psu.experiment imports psu.train
+
+    cfg.validate()
+    report = gp.backtest(
+        features, current_season, team=team, model_features=cfg.features, weights=_row_weights(features, cfg)
+    )
+
+    played = gp.training_rows(features)
+    train, weights = training(played, cfg)
+    kind = report["model_kind"] if cfg.model == "select" else cfg.model
+    model = fit_config(train, replace(cfg, model=kind), weights)
     model.sigma_by_phase = report["sigma_by_phase"]
     report["final_train_games"] = int(len(train))
     report["alpha"] = alpha
     report["shrink_plays"] = shrink_plays
+    report["config"] = asdict(cfg)
 
     predictions = features.copy()
     predictions["pred_margin"] = model.predict_margin(features)

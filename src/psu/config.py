@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from psu.modelconfig import ModelConfig
+
 TEAM = "Penn State"
 FIRST_SEASON = 2019  # 2019 on (2020 is the COVID season); lower this to pull more history
 
@@ -21,6 +23,10 @@ SIM_N = 10_000  # simulated seasons
 SIM_SEED = 0
 SIM_TAU = 5.0  # spread (points) of each team's season-long strength draw
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Production model configuration. `psu train` and `psu simulate --backfill` follow this; `psu experiment`
+# searches for a better one and, once adopted, this is updated to match.
+MODEL_CONFIG = ModelConfig()
 
 
 def current_season(today: date | None = None) -> int:

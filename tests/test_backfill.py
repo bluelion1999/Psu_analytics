@@ -1,10 +1,12 @@
+import json
 from dataclasses import dataclass
 
 import pandas as pd
 import pytest
 from conftest import synthetic_league
 
-from psu.backfill import _check_model_features, replay_games, simulate_as_of
+from psu.backfill import _check_model_features, _trained_metrics_and_half_life, replay_games, simulate_as_of
+from psu.features import DEFAULT_METRICS
 from psu.simulate import MissingModel, current_slate
 
 NOW = pd.Timestamp(2026, 9, 2)  # just after synthetic_league's played games; keeps every open week within the grace
@@ -96,6 +98,20 @@ def test_backfill_before_any_games_writes_nothing():
         now=NOW,
     )
     assert results == []
+
+
+def test_trained_metrics_and_half_life_reads_the_saved_report(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "game_model.json").write_text(
+        json.dumps({"config": {"metrics": ["epa", "sr", "expl"], "half_life": 4.0}}), encoding="utf-8"
+    )
+    assert _trained_metrics_and_half_life(tmp_path) == (("epa", "sr", "expl"), 4.0)
+
+
+def test_trained_metrics_and_half_life_falls_back_to_defaults_when_absent(tmp_path):
+    assert _trained_metrics_and_half_life(tmp_path) == (DEFAULT_METRICS, None)
+    assert _trained_metrics_and_half_life(tmp_path / "missing") == (DEFAULT_METRICS, None)
 
 
 @dataclass

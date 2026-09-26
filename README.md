@@ -125,7 +125,8 @@ probability, compares itself with the closing Vegas line, and writes:
 - `game_predictions` (DuckDB): `pred_margin` and `home_win_prob` for every game, including
   upcoming ones, next to `vegas_margin` and the actual `margin`.
 - `data/models/game_model.joblib`: the fitted model.
-- `data/reports/game_model.md` and `.json`: the backtest report.
+- `data/reports/game_model.md` and `.json`: the backtest report, including the `ModelConfig` it ran
+  with (see "Model experiments" below).
 
 **Features** (home minus away): opponent-adjusted offensive and defensive EPA/play and success
 rate as of the game's week, last season's SP+ rating, the talent composite, rest days, and a
@@ -240,3 +241,25 @@ Notes:
   It isn't a play-level model.
 - Player tables use box-score efficiency. Plays don't name players, so per-player EPA isn't available.
 - Set `PSU_DB_PATH` to point the dashboard at a different database file.
+
+## Model experiments
+
+```powershell
+.venv\Scripts\psu experiment   # walk-forward search over data window, features and model; no API calls
+```
+
+`psu train` and `psu simulate --backfill` follow `config.MODEL_CONFIG`, a `ModelConfig`: the feature
+list, model kind (`select` picks linear vs. XGBoost on validation MAE, as before), hyperparameters,
+whether to tune, the first training season (`train_from`), per-season weights, the rating metrics
+and their recency half-life. History is ingested from 2019 on (`FIRST_SEASON` in `src/psu/config.py`;
+2020 is the COVID season), which gives `psu experiment` more seasons to train on than `MODEL_CONFIG`'s
+default `train_from` of 2020 actually uses.
+
+`psu experiment` scores candidate configurations with a walk-forward backtest: each candidate trains
+only on seasons before 2023, 2024 and 2025 in turn, and is scored on that test season's completed
+games. Candidates are compared with a paired bootstrap of the per-game error difference and adopted
+only if they lower MAE by at least 0.02 without worsening the Brier score by more than 0.0005. It
+proceeds in stages: D (the training-data window and season weights), F (added features and rating
+recency), then M (model kind, tuned). The result is `data/reports/experiments.md` and `.json`, with
+every candidate's scores and the final chosen config. Adopting a winner means updating
+`config.MODEL_CONFIG` by hand and re-running `psu train`.

@@ -12,7 +12,7 @@ from collections.abc import Callable
 import duckdb
 
 from psu import config, db, experiment
-from psu.backfill import backfill_history
+from psu.backfill import _trained_metrics_and_half_life, backfill_history
 from psu.build import build
 from psu.client import BudgetExceeded, CachedClient, Fetch, MissingApiKey
 from psu.ingest import IngestResult, ingest
@@ -179,6 +179,7 @@ def _backfill(settings: config.Settings, *, team: str, n_sims: int, seed: int, t
     season = settings.current_season
     try:
         alpha, shrink_plays = _trained_alpha_and_shrink_plays(settings.db_path.parent)
+        metrics, half_life = _trained_metrics_and_half_life(settings.db_path.parent)
         con = db.connect(settings.db_path)
         try:
             rows = backfill_history(
@@ -187,6 +188,8 @@ def _backfill(settings: config.Settings, *, team: str, n_sims: int, seed: int, t
                 out_dir=settings.db_path.parent,
                 alpha=alpha,
                 shrink_plays=shrink_plays,
+                metrics=metrics,
+                half_life=half_life,
                 team=team,
                 n_sims=n_sims,
                 seed=seed,

@@ -8,6 +8,7 @@ would have said at the time.
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import joblib
 import pandas as pd
 
 from psu.config import TEAM
-from psu.features import FEATURES, assemble_features, frozen_ratings, ratings_as_of, rolling_ratings
+from psu.features import DEFAULT_METRICS, FEATURES, assemble_features, frozen_ratings, ratings_as_of, rolling_ratings
 from psu.simulate import (
     MissingModel,
     SimResult,
@@ -94,6 +95,18 @@ def simulate_as_of(
     ]
 
 
+def _trained_metrics_and_half_life(out_dir) -> tuple[tuple[str, ...], float | None]:
+    """The metrics and half_life the saved model was trained with, falling back to today's defaults."""
+    path = Path(out_dir) / "reports" / "game_model.json"
+    if path.exists():
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8"))["config"]
+            return tuple(cfg["metrics"]), cfg["half_life"]
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            pass
+    return DEFAULT_METRICS, None
+
+
 def backfill_history(
     con: duckdb.DuckDBPyConnection,
     *,
@@ -101,6 +114,8 @@ def backfill_history(
     out_dir: Path,
     alpha: float,
     shrink_plays: int,
+    metrics: tuple[str, ...] = DEFAULT_METRICS,
+    half_life: float | None = None,
     team: str = TEAM,
     n_sims: int,
     seed: int,
@@ -115,12 +130,21 @@ def backfill_history(
     _check_model_features(model)
     games, _ = load_inputs(con, season)
     inputs = load_feature_inputs(con)
-    ratings = rolling_ratings(inputs.enriched, inputs.games, alpha=alpha, shrink_plays=shrink_plays)
+    ratings = rolling_ratings(
+        inputs.enriched, inputs.games, alpha=alpha, shrink_plays=shrink_plays, metrics=metrics, half_life=half_life
+    )
     season_games = inputs.games[inputs.games["season"] == season]
 
     def predict(n: int) -> pd.DataFrame:
         snapshot = ratings_as_of(
-            inputs.enriched, inputs.games, season=season, as_of_slate=n, alpha=alpha, shrink_plays=shrink_plays
+            inputs.enriched,
+            inputs.games,
+            season=season,
+            as_of_slate=n,
+            alpha=alpha,
+            shrink_plays=shrink_plays,
+            metrics=metrics,
+            half_life=half_life,
         )
         feats = assemble_features(
             frozen_ratings(ratings, season, n, snapshot), season_games, inputs.lines, inputs.sp, inputs.talent

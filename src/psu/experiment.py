@@ -41,8 +41,16 @@ Evaluate = Callable[[ModelConfig, ModelConfig], tuple[dict, dict, tuple[float, f
 # --- walk-forward -------------------------------------------------------------------------------------------
 
 
-def _training(played: pd.DataFrame, cfg: ModelConfig, season: int) -> tuple[pd.DataFrame, pd.Series | None]:
-    rows = played[(played["season"] >= cfg.train_from) & (played["season"] < season)]
+def training(
+    played: pd.DataFrame, cfg: ModelConfig, season: int | None = None
+) -> tuple[pd.DataFrame, pd.Series | None]:
+    """Rows from cfg.train_from up to (but excluding) season, weighted by cfg; weight-0 seasons dropped.
+
+    `season=None` means no upper bound: every row from cfg.train_from on.
+    """
+    rows = played[played["season"] >= cfg.train_from]
+    if season is not None:
+        rows = rows[rows["season"] < season]
     w = rows["season"].map(cfg.weight_of).astype(float)
     keep = w > 0
     rows, w = rows[keep], w[keep]
@@ -103,7 +111,7 @@ def walk_forward(frame: pd.DataFrame, cfg: ModelConfig, test_seasons=TEST_SEASON
         test = played[played["season"] == season]
         if test.empty:
             continue
-        train, weights = _training(played, cfg, season)
+        train, weights = training(played, cfg, season)
         if train.empty:
             raise ValueError(f"No training seasons before {season} for {cfg}")
         if _fold_fallback(train, cfg):

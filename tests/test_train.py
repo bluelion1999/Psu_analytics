@@ -1,10 +1,13 @@
 import json
 
 import joblib
+import numpy as np
 import pytest
 from conftest import synthetic_features
 
 from psu.db import connect
+from psu.features import FEATURES
+from psu.modelconfig import ModelConfig
 from psu.models import game_predict as gp
 from psu.train import PREDICTION_COLUMNS, report_markdown, train_and_save
 
@@ -55,6 +58,27 @@ def test_saved_model_and_markdown_carry_phase_sigmas(tmp_path):
     text = report_markdown(report)
     assert "by phase" in text and "## Calibration" in text and "Before the model upgrade" in text
     assert "| early |" in text
+
+
+def test_train_and_save_follows_a_non_default_config(tmp_path):
+    con = connect(":memory:")
+    features = synthetic_features()
+    features["d_elo"] = np.random.default_rng(1).normal(size=len(features))
+    cfg = ModelConfig(features=(*FEATURES, "d_elo"), model="linear")
+
+    report = train_and_save(con, features, current_season=2026, out_dir=tmp_path, cfg=cfg)
+
+    preds = con.execute("SELECT * FROM game_predictions").df()
+    assert len(preds) == len(features)
+
+    model = joblib.load(tmp_path / "models" / "game_model.joblib")
+    assert "d_elo" in model.features
+    assert model.kind == "linear"
+
+    assert tuple(report["config"]["features"]) == cfg.features
+    saved = json.loads((tmp_path / "reports" / "game_model.json").read_text(encoding="utf-8"))
+    assert saved["config"]["model"] == "linear"
+    assert "d_elo" in saved["config"]["features"]
 
 
 def test_final_model_trains_on_every_completed_game_after_the_first_season(tmp_path, monkeypatch):
