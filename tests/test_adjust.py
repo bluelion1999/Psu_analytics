@@ -63,6 +63,31 @@ def test_adjusted_levels_are_centred_on_the_league_average():
     assert np.average(out["def_adj"], weights=out["def_plays"]) == pytest.approx(df["ppa"].mean(), abs=1e-9)
 
 
+def test_equal_weights_match_the_unweighted_fit():
+    plays = synthetic()
+    base = opponent_adjust(plays, "ppa", alpha=5.0)
+    weighted = opponent_adjust(plays.assign(w=1.0), "ppa", alpha=5.0, weights="w")
+    pd.testing.assert_frame_equal(base, weighted, check_dtype=False)
+
+
+def test_zero_weight_plays_are_ignored():
+    plays = synthetic()
+    noisy = plays.copy()
+    noisy.loc[noisy.index[:10], "ppa"] = 50.0  # absurd values...
+    noisy["w"] = 1.0
+    noisy.loc[noisy.index[:10], "w"] = 0.0  # ...that carry no weight
+    clean = plays.iloc[10:].assign(w=1.0)
+    a = opponent_adjust(noisy, "ppa", alpha=5.0, weights="w").set_index(["season", "team"])
+    b = opponent_adjust(clean, "ppa", alpha=5.0, weights="w").set_index(["season", "team"])
+    np.testing.assert_allclose(a.loc[b.index, ["off_adj", "def_adj"]], b[["off_adj", "def_adj"]], atol=1e-9)
+
+
+def test_explosive_is_an_adjustable_value():
+    plays = synthetic().assign(explosive=lambda d: d["ppa"] > 0.5)
+    out = opponent_adjust(plays, "explosive", alpha=5.0)
+    assert out["off_adj"].between(-0.5, 1.5).all()
+
+
 def test_garbage_time_excluded_by_default_and_value_validated():
     df = pd.concat(
         [
