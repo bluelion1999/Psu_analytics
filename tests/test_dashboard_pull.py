@@ -98,3 +98,15 @@ def test_stale_lock_is_replaced(tmp_path):
 def test_pull_available(tmp_path):
     assert not pull.pull_available(_settings(tmp_path, api_key=None))
     assert pull.pull_available(_settings(tmp_path))
+
+
+def test_running_child_is_terminated_before_lock_is_released(tmp_path):
+    procs = []
+
+    def boom(_):
+        raise ValueError
+
+    with pytest.raises(ValueError):
+        pull.run_refresh(_settings(tmp_path), boom, popen=_popen(["x\n"], 0, procs=procs))
+    assert procs[0].terminated
+    assert not (tmp_path / pull.LOCK_NAME).exists()
