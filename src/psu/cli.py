@@ -341,3 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         return HANDLERS[args.command](args, settings)
     except duckdb.IOException as e:
         return _db_error(e, settings)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

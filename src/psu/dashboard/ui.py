@@ -12,7 +12,9 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from psu import config
 from psu.dashboard.common import MissingData, db_path, read
+from psu.dashboard.pull import PullBusy, pull_available, run_refresh
 
 PSU_NAVY = "#041E42"
 CHART_BLUE = "#4A7DD4"  # brighter Penn State blue: navy #1E407C disappears on the dark background
@@ -118,9 +120,40 @@ def fmt(series: pd.Series, spec: str) -> pd.Series:
     return series.map(lambda v: "" if pd.isna(v) else format(v, spec))
 
 
+@st.dialog("Pull latest data")
+def _pull_dialog() -> None:
+    st.write(
+        "This runs `psu refresh`: it ingests the current season from CFBD (usually 10–20 API calls, capped at 60), "
+        "rebuilds metrics, retrains the model and re-simulates. It takes about 4 minutes."
+    )
+    go, cancel = st.columns(2)
+    if cancel.button("Cancel", width="stretch"):
+        st.rerun()
+    if not go.button("Continue", type="primary", width="stretch"):
+        return
+    with st.status("Pulling latest data…", expanded=True) as status:
+        try:
+            code = run_refresh(config.load_settings(), lambda line: st.write(line))
+        except PullBusy:
+            status.update(label="A pull is already running.", state="error")
+            return
+        if code != 0:
+            status.update(label="Pull failed", state="error")
+            st.error(f"Refresh failed (exit {code}). The previous data is unchanged.")
+            return
+        status.update(label="Pull complete", state="complete")
+    st.cache_data.clear()
+    st.rerun()
+
+
 def season_picker() -> int:
-    if st.sidebar.button("Refresh data"):
+    if st.sidebar.button("Reload view"):
         st.cache_data.clear()
+    available = pull_available(config.load_settings())
+    if st.sidebar.button(
+        "Pull latest data", disabled=not available, help=None if available else "Set CFBD_API_KEY in .env to enable"
+    ):
+        _pull_dialog()
     options = load_or_stop("common.seasons")
     if not options:
         st.info("No games loaded yet; run `psu ingest` first")
