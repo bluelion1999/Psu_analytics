@@ -18,16 +18,32 @@ class FakeProc:
     def __init__(self, lines, code):
         self.stdout = iter(lines)
         self.code = code
+        self.running = True
+        self.terminated = False
 
-    def wait(self):
+    def poll(self):
+        return None if self.running else self.code
+
+    def terminate(self):
+        self.terminated = True
+        self.running = False
+
+    def kill(self):
+        self.running = False
+
+    def wait(self, timeout=None):
+        self.running = False
         return self.code
 
 
-def _popen(lines, code, calls=None):
+def _popen(lines, code, calls=None, procs=None):
     def factory(cmd, **kwargs):
         if calls is not None:
             calls.append((cmd, kwargs))
-        return FakeProc(lines, code)
+        proc = FakeProc(lines, code)
+        if procs is not None:
+            procs.append(proc)
+        return proc
 
     return factory
 
@@ -42,7 +58,10 @@ def test_streams_lines_and_returns_code(tmp_path):
     s, got, calls = _settings(tmp_path), [], []
     assert pull.run_refresh(s, got.append, popen=_popen(["a\n", "b  \n"], 3, calls)) == 3
     assert got == ["a", "b"]
-    assert calls[0][1]["text"] is True and calls[0][1]["cwd"] == config.PROJECT_ROOT
+    kw = calls[0][1]
+    assert kw["text"] is True and kw["cwd"] == config.PROJECT_ROOT
+    assert kw["encoding"] == "utf-8" and kw["errors"] == "replace"
+    assert kw["env"]["PYTHONIOENCODING"] == "utf-8" and kw["env"]["PYTHONUTF8"] == "1"
     assert not (tmp_path / pull.LOCK_NAME).exists()
 
 

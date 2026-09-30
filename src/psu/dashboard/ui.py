@@ -124,7 +124,7 @@ def fmt(series: pd.Series, spec: str) -> pd.Series:
 def _pull_dialog() -> None:
     st.write(
         "This runs `psu refresh`: it ingests the current season from CFBD (usually 10–20 API calls, capped at 60), "
-        "rebuilds metrics, retrains the model and re-simulates. It takes about 4 minutes."
+        "rebuilds metrics, retrains the model and re-simulates. It takes about 5 minutes."
     )
     go, cancel = st.columns(2)
     if cancel.button("Cancel", width="stretch"):
