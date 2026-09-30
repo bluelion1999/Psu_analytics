@@ -92,10 +92,10 @@ def test_predictions_page_names_the_missing_commands(tmp_path, monkeypatch):
     assert "psu simulate" in text and "psu train" in text
 
 
-def test_refresh_button_clears_cache(tmp_path, monkeypatch):
+def test_reload_button_clears_cache(tmp_path, monkeypatch):
     _seed(tmp_path, monkeypatch)
     at = _run("overview")
-    at.sidebar.button[0].click().run()
+    next(b for b in at.sidebar.button if b.label == "Reload view").click().run()
     assert not at.exception
 
 
